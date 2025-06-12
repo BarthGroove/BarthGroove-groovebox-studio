@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GrooveBox - Estúdio Completo (v.Final Corrigido)</title>
+    <title>GrooveBox - Estúdio Completo (v.Finalíssima)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -304,9 +304,8 @@
                 loop();
             }
 
-            // **FUNÇÃO CORRIGIDA**
             async function initializeMicrophone() {
-                if (mic || isMicInitializing) return true; // Já está inicializado ou em processo
+                if (mic || isMicInitializing) return true;
                 isMicInitializing = true;
                 elements.statusDisplay.textContent = "Inicializando microfone...";
                 try {
@@ -324,7 +323,7 @@
                     console.error("ERRO CRÍTICO AO INICIALIZAR MICROFONE:", e);
                     elements.statusDisplay.textContent = `Erro: Microfone não autorizado (${e.name}). Verifique as permissões do navegador/sistema.`;
                     isMicInitializing = false;
-                    mic = null; // Reseta para poder tentar de novo
+                    mic = null; 
                     return false;
                 }
             }
@@ -359,17 +358,13 @@
             }
 
             async function addAudioTrack() {
-                // Se o microfone não foi inicializado, faz isso primeiro.
                 if (!mic) {
                     const micReady = await initializeMicrophone();
-                    // Se a inicialização falhou, não faz mais nada.
                     if (!micReady) return;
                 } else {
-                    // Se o microfone já está pronto, apenas cria a UI da pista.
                     createAudioTrackUI();
                 }
             }
-
 
             function armTrackForRecording(trackId) {
                 const targetTrack = tracks.find(t => t.id === trackId); if (!targetTrack) return;
@@ -439,30 +434,23 @@
                         alert("Erro crítico ao tentar iniciar o gravador. Verifique o console (F12).");
                         return;
                     }
-                    micRecorder.onstart = () => { console.log("DEBUG: MediaRecorder iniciado com sucesso. Estado:", micRecorder.state); };
-                    micRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
                     micRecorder.onstop = () => {
-                        console.log(`DEBUG: MediaRecorder parado. Total de chunks: ${chunks.length}`);
                         if (chunks.length === 0) {
-                            console.error("DEBUG: FALHA. Nenhum dado de áudio foi capturado.");
                             armedTrack.isArmed = false; updateTrackControls(); return;
                         }
                         const blob = new Blob(chunks, { type: 'audio/webm' });
-                        console.log(`DEBUG: Blob criado. Tamanho: ${blob.size}, Tipo: ${blob.type}`);
                         armedTrack.audioBlob = blob;
                         if(armedTrack.player) armedTrack.player.dispose();
                         armedTrack.player = new Tone.Player().toDestination();
                         armedTrack.player.connect(masterFilter);
                         armedTrack.player.onload = () => {
-                            console.log("DEBUG: Tone.Player carregou o blob.");
                             drawWaveform(armedTrack);
-                            if (Tone.Transport.state === 'started') schedulePlayback();
+                            schedulePlayback(); // **CORREÇÃO FINAL: REMOVIDO O IF**
                         };
                         armedTrack.player.onerror = (err) => { console.error("DEBUG: Erro no Tone.Player:", err); };
                         armedTrack.player.load(URL.createObjectURL(blob));
                         armedTrack.isArmed = false; updateTrackControls();
                     };
-                    micRecorder.onerror = (e) => { console.error("DEBUG: Erro no MediaRecorder:", e); };
                     micRecorder.start();
                     elements.statusDisplay.textContent = `Gravando em '${armedTrack.name}'...`;
                 }
