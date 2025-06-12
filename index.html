@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GrooveBox - Estúdio Completo (v.Final Definitiva)</title>
+    <title>GrooveBox - Estúdio Completo (v.Final.Debug.2)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -358,14 +358,13 @@
             }
 
             async function addAudioTrack() {
-                if (isMicInitializing) return; // Impede cliques múltiplos durante a inicialização
+                if (isMicInitializing) return;
 
                 if (!mic) {
                     const micReady = await initializeMicrophone();
-                    if (!micReady) return; // Se a inicialização falhar, para aqui.
+                    if (!micReady) return;
                 }
                 
-                // Se o microfone estiver pronto (da primeira vez ou de cliques subsequentes), cria a pista.
                 createAudioTrackUI();
             }
 
