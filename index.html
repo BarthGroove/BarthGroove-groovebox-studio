@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GrooveBox - Estúdio Completo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        #tracks-container { max-height: 40vh; overflow-y: auto; overflow-x: hidden; padding-right: 8px; }
+        #tracks-container::-webkit-scrollbar { width: 8px; }
+        #tracks-container::-webkit-scrollbar-track { background: #374151; border-radius: 4px; }
+        #tracks-container::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 4px; }
+        .pad { transition: all 0.1s ease-in-out; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); border: 2px solid transparent; }
+        .pad.selected { transform: scale(1.05); border-color: #67e8f9; box-shadow: 0 0 20px -5px #67e8f9; }
+        .piano-roll-canvas, .waveform-canvas { background-color: #374151; width: 100%; height: 180px; border-radius: 0 0 0.25rem 0.25rem; }
+        .piano-roll-canvas { cursor: cell; }
+        .playhead { position: absolute; top: 24px; /* Altura da régua */ bottom: 0; width: 2px; background-color: rgba(239, 68, 68, 0.7); pointer-events: none; z-index: 10; }
+        .text-black { color: #000; }
+        .track-btn, .control-button, .track-action-btn, .project-btn { transition: all 0.15s ease-in-out; }
+        .control-button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .track-btn.active, .arm-record-btn.active { filter: brightness(1.3); box-shadow: 0 0 8px 2px var(--tw-shadow-color); }
+        .mute-btn.active { background-color: #f97316; --tw-shadow-color: #f97316; }
+        .solo-btn.active { background-color: #38bdf8; --tw-shadow-color: #38bdf8; }
+        .arm-record-btn.active { background-color: #ef4444; --tw-shadow-color: #ef4444; animation: pulse 1.5s infinite; }
+        #note-preview { position: absolute; background-color: rgba(103, 232, 249, 0.6); border: 1px solid #67e8f9; border-radius: 2px; pointer-events: none; z-index: 20; display: none; }
+        .record-btn.recording { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); } }
+        .track-name { cursor: pointer; }
+        .time-ruler-container { display: flex; }
+        .time-ruler-step { flex: 1 1 0%; text-align: center; border-left: 1px solid #4b5563; padding-left: 2px; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4">
+
+    <div id="note-preview"></div>
+
+    <div class="w-full max-w-6xl mx-auto bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-8 space-y-6">
+        <header class="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="text-center md:text-left"><h1 class="text-2xl md:text-3xl font-bold text-cyan-400">GrooveBox Studio</h1><p id="status-display" class="text-gray-400 mt-1">Selecione, clique e arraste para criar notas.</p></div>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <button id="save-project-btn" class="project-btn bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded-lg">Salvar Projeto</button>
+                    <button id="load-project-btn" class="project-btn bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg">Carregar Projeto</button>
+                    <input type="file" id="load-project-input" class="hidden" accept=".gbox">
+                </div>
+                <div class="flex items-center space-x-3">
+                    <label for="kit-select" class="text-sm font-medium text-gray-400">Kit de Som:</label>
+                    <select id="kit-select" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-cyan-500 focus:border-cyan-500 block p-2">
+                        <option value="drums" selected>Bateria 🥁</option>
+                        <option value="classic909">Classic 909 📀</option>
+                        <option value="synths">Sintetizadores 🎹</option>
+                        <option value="piano">Piano 🎹</option>
+                        <option value="8bit">8-Bit Legacy 👾</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+        
+        <div id="pad-container" class="grid grid-cols-4 md:grid-cols-8 gap-3"></div>
+        <div id="tracks-container" class="space-y-3"></div>
+        <div class="flex gap-4">
+            <button id="add-track-button" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-4 rounded-lg shadow-md transition">+ Adicionar Pista MIDI</button>
+            <button id="add-audio-track-button" class="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 px-4 rounded-lg shadow-md transition">+ Adicionar Pista de Áudio 🎤</button>
+        </div>
+        
+        <div class="bg-gray-900/50 p-4 rounded-lg">
+            <h3 class="text-lg font-bold text-center text-cyan-300 mb-4">Efeitos Master</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-4">
+                <div class="flex flex-col items-center"><label for="reverb-slider" class="text-sm font-medium mb-1">Reverb</label><input id="reverb-slider" type="range" min="0" max="0.9" step="0.05" value="0" class="w-full h-2"></div>
+                <div class="flex flex-col items-center"><label class="text-sm font-medium mb-1">Delay (Eco)</label><div class="flex items-center gap-4 w-full"><select id="delay-time-select" class="bg-gray-700 text-xs p-1 rounded w-1/3"><option value="4n">1/4</option><option value="8n" selected>1/8</option><option value="8t">1/8t</option><option value="16n">1/16</option></select><div class="flex-grow"><label for="delay-feedback-slider" class="text-xs">Repetir</label><input id="delay-feedback-slider" type="range" min="0" max="0.8" step="0.05" value="0" class="w-full h-1"></div><div class="flex-grow"><label for="delay-wet-slider" class="text-xs">Qntd.</label><input id="delay-wet-slider" type="range" min="0" max="1" step="0.05" value="0" class="w-full h-1"></div></div></div>
+                <div class="flex flex-col items-center"><label for="filter-slider" class="text-sm font-medium mb-1">Filtro (Corta Agudos)</label><input id="filter-slider" type="range" min="350" max="15000" step="50" value="15000" class="w-full h-2"></div>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-900/50 p-4 rounded-lg flex items-center justify-around">
+                <button id="play-button" class="control-button bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-8 rounded-lg shadow-md">Play</button>
+                <div class="flex items-center justify-center gap-4">
+                    <label for="bpm-slider" class="text-sm font-medium">BPM</label>
+                    <input id="bpm-slider" type="range" min="60" max="180" value="120" class="w-24 h-2">
+                    <span id="bpm-display" class="text-sm font-bold w-8">120</span>
+                </div>
+                <button id="stop-button" class="control-button bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-8 rounded-lg shadow-md">Stop</button>
+            </div>
+            <div class="bg-gray-900/50 p-4 rounded-lg">
+                <h3 class="text-lg font-bold text-center text-cyan-300 mb-2">Gravador de Performance</h3>
+                <div class="flex justify-around items-center">
+                    <canvas id="visualizer" width="100" height="40" class="bg-gray-700 rounded"></canvas>
+                    <button id="start-record-button" class="control-button record-btn bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-5 rounded-lg shadow-md">🔴 Gravar</button>
+                    <button id="stop-record-button" class="control-button bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-5 rounded-lg shadow-md" disabled>⏹️ Parar</button>
+                    <button id="download-button" class="control-button bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-5 rounded-lg shadow-md" disabled>Baixar WAV</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const elements = {
+                padContainer: document.getElementById('pad-container'), tracksContainer: document.getElementById('tracks-container'),
+                playButton: document.getElementById('play-button'), stopButton: document.getElementById('stop-button'),
+                bpmSlider: document.getElementById('bpm-slider'), bpmDisplay: document.getElementById('bpm-display'),
+                statusDisplay: document.getElementById('status-display'), kitSelect: document.getElementById('kit-select'),
+                addTrackButton: document.getElementById('add-track-button'), notePreview: document.getElementById('note-preview'),
+                addAudioTrackButton: document.getElementById('add-audio-track-button'),
+                reverbSlider: document.getElementById('reverb-slider'), delayTimeSelect: document.getElementById('delay-time-select'),
+                delayFeedbackSlider: document.getElementById('delay-feedback-slider'), delayWetSlider: document.getElementById('delay-wet-slider'),
+                filterSlider: document.getElementById('filter-slider'),
+                startRecordButton: document.getElementById('start-record-button'), stopRecordButton: document.getElementById('stop-record-button'),
+                downloadButton: document.getElementById('download-button'), visualizer: document.getElementById('visualizer'),
+                saveProjectBtn: document.getElementById('save-project-btn'), loadProjectBtn: document.getElementById('load-project-btn'),
+                loadProjectInput: document.getElementById('load-project-input'),
+            };
+
+            const STEPS_PER_TRACK = 32; const LOOP_DURATION = "2m";
+            const NOTE_PITCHES = ['B5','A#5','A5','G#5','G5','F#5','F5','E5','D#5','D5','C#5','C5','B4','A#4','A4','G#4','G4','F#4','F4','E4','D#4','D4','C#4','C4','B3','A#3','A3','G#3','G3','F#3','F3','E3','D#3','D3','C#3','C3'];
+            let tracks = []; let trackCounter = 0;
+            let selectedInstrument = null; let isAudioReady = false; let currentKit = 'drums';
+            let scheduledParts = []; let isDragging = false; let dragInfo = {};
+            let masterReverb, masterDelay, masterFilter, performanceRecorder, recordedBlob, meter, mic, micRecorder, micGain, micAnalyser;
+            
+            let soundKits = {
+                drums: { sounds: {}, labels: ['Bumbo', 'Caixa', 'Chimbal', 'Tom', 'Clap', 'Prato', 'Cowbell', 'Conga'], colors: ['#f43f5e', '#3b82f6', '#facc15', '#fb7185', '#60a5fa', '#fde047', '#a855f7', '#f97316']},
+                classic909: { sounds: {}, labels: ['Bumbo 909', 'Caixa 909', 'Chimbal F.', 'Tom 909', 'Clap 909', 'Prato 909', 'Chimbal A.', 'Rimshot'], colors: ['#f9a8d4', '#fde047', '#fde047', '#93c5fd', '#d8b4fe', '#fde047', '#fde047', '#a7f3d0']},
+                synths: { sounds: {}, notes: ['C2', 'G2', 'C3', 'E3', 'G3', 'C4', 'G4', 'A4'], labels: ['Bass 1', 'Bass 2', 'Lead 1', 'Lead 2', 'Pad Saw', 'Pad Sqr', 'Lead Saw', 'Lead Tri'], colors: ['#14b8a6', '#2dd4bf', '#5eead4', '#22c55e', '#4ade80', '#86efac', '#a3e635', '#bef264'] },
+                piano: { sounds: {}, notes: ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'], labels: ['Dó', 'Ré', 'Mi', 'Fá', 'Sol', 'Lá', 'Si', 'Dó+'], colors: ['#e2e8f0', '#cbd5e1', '#94a3b8', '#e2e8f0', '#cbd5e1', '#94a3b8', '#e2e8f0', '#cbd5e1']},
+                '8bit': { sounds: {}, labels: ['Lead', 'Baixo', 'Ruído Hit', 'Arp', 'Laser', 'Moeda', 'Explosão', 'PowerUp'], colors: ['#ff6a4d', '#ffb000', '#e3e3e3', '#39f4f4', '#ff3131', '#f6d92f', '#ffffff', '#39d535']}
+            };
+
+            async function initializeAudio() {
+                if (isAudioReady) return; elements.statusDisplay.textContent = "Inicializando áudio..."; await Tone.start();
+                
+                const streamDestination = Tone.context.createMediaStreamDestination();
+                performanceRecorder = new MediaRecorder(streamDestination.stream);
+                meter = new Tone.Meter();
+                const masterBus = new Tone.Gain().toDestination();
+                masterBus.connect(streamDestination); masterBus.connect(meter);
+                masterFilter = new Tone.Filter(15000, "lowpass");
+                masterDelay = new Tone.FeedbackDelay("8n", 0);
+                masterReverb = new Tone.Reverb({ decay: 1.5, wet: 0 });
+                masterFilter.chain(masterDelay, masterReverb, masterBus);
+                
+                const masterChainInput = masterFilter;
+                const createSynth = (factory) => factory().connect(masterChainInput);
+                
+                soundKits.drums.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 10, oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4, attackCurve: "exponential" } })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.005, decay: 0.2, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 200, envelope: { attack: 0.001, decay: 0.1, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000 })), 'sound4': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 5 })), 'sound5': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0 } })), 'sound6': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 1.4, release: 0.2 }, harmonicity: 5.1, modulationIndex: 32, resonance: 8000 })), 'sound7': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.2, release: 0.1 }, harmonicity: 3, modulationIndex: 20, resonance: 4000 })), 'sound8': createSynth(() => new Tone.FMSynth({ harmonicity: 1.5, modulationIndex: 5, envelope: { attack: 0.01, decay: 0.3 } })) };
+                soundKits.classic909.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.02, octaves: 6, oscillator: {type: 'sine'}, envelope: {attack: 0.001, decay: 0.3, sustain: 0.01, release: 0.2} })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'white', playbackRate: 1.5 }, envelope: { attack: 0.001, decay: 0.25, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.05, release: 0.05 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3000 })), 'sound4': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.08, octaves: 4, oscillator: {type: 'triangle'}, envelope: {attack: 0.01, decay: 0.3, sustain: 0.01, release: 0.1} })), 'sound5': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.08, sustain: 0 } })), 'sound6': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 0.8, release: 0.1 }, harmonicity: 4, modulationIndex: 20, resonance: 6000 })), 'sound7': createSynth(() => new Tone.MetalSynth({ frequency: 500, envelope: { attack: 0.001, decay: 0.3, release: 0.1 }, harmonicity: 6, modulationIndex: 40, resonance: 4000 })), 'sound8': createSynth(() => new Tone.FMSynth({ harmonicity: 2, modulationIndex: 2, envelope: { attack: 0.005, decay: 0.05 } })) };
+                soundKits.synths.sounds = { 'sound1': createSynth(() => new Tone.MonoSynth({oscillator:{type:"fmsquare"},envelope:{attack:0.01,decay:0.1,release:0.2}})), 'sound2': createSynth(() => new Tone.FMSynth({harmonicity:1,modulationIndex:10,envelope:{attack:0.01,decay:0.2}})), 'sound3': createSynth(() => new Tone.AMSynth({harmonicity:1.5,envelope:{attack:0.01,decay:0.5,release:1}})), 'sound4': createSynth(() => new Tone.FMSynth({harmonicity:1.5,modulationIndex:5,envelope:{attack:0.01,decay:1,release:1}})), 'sound5': createSynth(() => new Tone.PolySynth(Tone.Synth,{oscillator:{type:'sawtooth'},envelope:{attack:0.1,decay:0.5,sustain:0.4,release:0.8}})), 'sound6': createSynth(() => new Tone.PolySynth(Tone.Synth,{oscillator:{type:'square'},envelope:{attack:0.1,decay:0.5,sustain:0.4,release:0.8}})), 'sound7': createSynth(() => new Tone.Synth({oscillator: {type: 'sawtooth'}, envelope: {attack: 0.02, decay: 0.3, release: 0.2}})), 'sound8': createSynth(() => new Tone.Synth({oscillator: {type: 'triangle'}, envelope: {attack: 0.05, decay: 0.5, release: 0.4}})) };
+                soundKits.piano.sounds = { 'main': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { "harmonicity": 3.01, "modulationIndex": 14, "envelope": { "attack": 0.01, "decay": 0.2, "sustain": 0.1 }})) };
+                soundKits['8bit'].sounds = { 'sound1': createSynth(() => new Tone.MonoSynth({oscillator: {type: "pulse", width: 0.6}, envelope: {attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.1}})), 'sound2': createSynth(() => new Tone.MonoSynth({oscillator: {type: "square"}, envelope: {attack: 0.05, decay: 0.3, sustain: 0.1, release: 0.4}, filter: {Q: 6, type: "lowpass", rolloff: -24}, filterEnvelope: {attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.8, baseFrequency: 80, octaves: 2}})), 'sound3': createSynth(() => new Tone.NoiseSynth({noise: {type: "white"}, envelope: {attack: 0.001, decay: 0.1, sustain: 0}})), 'sound4': createSynth(() => new Tone.PolySynth(Tone.FMSynth, {harmonicity: 3, modulationIndex: 10, modulation: {type: "square"}, envelope: {attack: 0.01, decay: 0.2, sustain: 0}, modulationEnvelope: {attack: 0.01, decay: 0.5, sustain: 0}})), 'sound5': createSynth(() => new Tone.Synth({oscillator: {type: 'sawtooth'}, envelope: {attack: 0.01, decay: 0.3, sustain: 0}})), 'sound6': createSynth(() => new Tone.Synth({oscillator: {type: 'sine'}, envelope: {attack: 0.005, decay: 0.1, sustain: 0}})), 'sound7': createSynth(() => new Tone.NoiseSynth({noise: {type: "pink"}, envelope: {attack: 0.001, decay: 0.5, sustain: 0}})), 'sound8': createSynth(() => new Tone.Synth({oscillator: {type: 'square'}, envelope: {attack: 0.001, decay: 0.2, sustain: 0}})), };
+
+                Tone.Transport.bpm.value = 120; Tone.Transport.loop = true; Tone.Transport.loopStart = 0; Tone.Transport.loopEnd = LOOP_DURATION;
+                isAudioReady = true; elements.statusDisplay.textContent = "Áudio pronto.";
+                new Tone.Loop(time => { Tone.Draw.schedule(() => { document.querySelectorAll('.playhead').forEach(ph => ph.style.left = `${Tone.Transport.progress * 100}%`); }, time); }, "16n").start(0);
+                
+                function drawVisualizer() { requestAnimationFrame(drawVisualizer); if(!isAudioReady) return; const level = Tone.dbToGain(meter.getValue()); const ctx = elements.visualizer.getContext('2d'); const { width, height } = elements.visualizer; ctx.clearRect(0, 0, width, height); ctx.fillStyle = '#34d399'; ctx.fillRect(0, 0, width * level, height); }
+                drawVisualizer();
+            }
+            
+            function getLuminance(hex) { const rgb = parseInt(hex.slice(1), 16); const r = (rgb >> 16) & 0xff, g = (rgb >> 8) & 0xff, b = (rgb >> 0) & 0xff; return 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+            function createPads() {
+                elements.padContainer.innerHTML = ''; const kit = soundKits[currentKit];
+                kit.labels.forEach((label, i) => {
+                    const soundId = (currentKit === 'piano') ? 'main' : `sound${i + 1}`; const pad = document.createElement('button');
+                    pad.className = 'pad h-20 rounded-lg font-semibold flex items-center justify-center cursor-pointer select-none p-2 text-center';
+                    const bgColor = kit.colors[i]; pad.style.backgroundColor = bgColor;
+                    if (getLuminance(bgColor) > 160) pad.classList.add('text-black'); else pad.classList.add('text-white');
+                    pad.textContent = label; pad.dataset.soundId = soundId;
+                    if(kit.notes && kit.notes[i]) { pad.dataset.note = kit.notes[i]; }
+                    pad.addEventListener('click', () => selectInstrument(pad));
+                    elements.padContainer.appendChild(pad);
+                });
+            }
+            async function selectInstrument(padElement) {
+                await initializeAudio();
+                const soundId = padElement.dataset.soundId; const soundToUse = soundKits[currentKit].sounds[soundId];
+                selectedInstrument = { id: soundId, color: padElement.style.backgroundColor, sound: soundToUse, kit: currentKit };
+                const noteToPlay = padElement.dataset.note || 'C4'; const isNoise = soundToUse instanceof Tone.NoiseSynth;
+                if (isNoise) { soundToUse.triggerAttack(); } else { soundToUse.triggerAttackRelease(noteToPlay, "8n"); }
+                document.querySelectorAll('.pad').forEach(p => p.classList.remove('selected'));
+                padElement.classList.add('selected');
+                elements.statusDisplay.textContent = `Instrumento selecionado: ${padElement.textContent}.`;
+            }
+            function drawPianoRoll(track) {
+                const canvas = document.querySelector(`canvas[data-track-id="${track.id}"]`); if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                canvas.width = canvas.clientWidth; canvas.height = canvas.clientHeight;
+                const { width, height } = canvas;
+                const stepWidth = width / STEPS_PER_TRACK; const noteHeight = height / NOTE_PITCHES.length;
+                ctx.clearRect(0, 0, width, height);
+                NOTE_PITCHES.forEach((note, i) => { ctx.fillStyle = note.includes('#') ? '#4b5563' : '#374151'; ctx.fillRect(0, i * noteHeight, width, noteHeight); });
+                for (let i = 1; i < STEPS_PER_TRACK; i++) { ctx.strokeStyle = '#2d3748'; ctx.globalAlpha = (i % 4 === 0) ? 0.5 : 0.2; ctx.beginPath(); ctx.moveTo(i * stepWidth, 0); ctx.lineTo(i * stepWidth, height); ctx.stroke(); }
+                ctx.globalAlpha = 1.0;
+                track.sequence.forEach(noteData => { const noteIndex = NOTE_PITCHES.indexOf(noteData.pitch); if (noteIndex > -1) { const noteWidth = stepWidth * (noteData.duration || 1); ctx.fillStyle = noteData.color; ctx.fillRect(noteData.step * stepWidth, noteIndex * noteHeight, noteWidth - 1, noteHeight - 1); } });
+            }
+            function getActiveTracks() { const soloTrack = tracks.find(t => t.isSolo); if (soloTrack) return [soloTrack]; return tracks.filter(t => !t.isMuted); }
+            function schedulePlayback() {
+                if(!isAudioReady) return;
+                scheduledParts.forEach(part => part.dispose()); scheduledParts = [];
+                getActiveTracks().forEach(track => {
+                    if (track.type === 'note') {
+                        const events = track.sequence.map(noteData => ({ time: Tone.Time("16n") * noteData.step, duration: Tone.Time("16n") * (noteData.duration || 1), pitch: noteData.pitch, sound: noteData.sound }));
+                        const part = new Tone.Part((time, value) => {
+                            value.sound.volume.value = track.volume;
+                            if (value.sound instanceof Tone.NoiseSynth) { value.sound.triggerAttack(time); } 
+                            else { value.sound.triggerAttackRelease(value.pitch, value.duration, time); }
+                        }, events).start(0);
+                        part.loop = true; part.loopEnd = LOOP_DURATION;
+                        scheduledParts.push(part);
+                    } else if (track.type === 'audio' && track.player && track.player.loaded) {
+                        track.player.volume.value = track.volume;
+                        track.player.start(0); // Inicia a partir do começo do loop
+                        scheduledParts.push(track.player);
+                    }
+                });
+            }
+            function addNote(track, step, pitch, duration) { const noteData = { step, pitch, duration, ...selectedInstrument }; track.sequence = track.sequence.filter(n => !(n.pitch === pitch && n.step < step + duration && step < n.step + n.duration)); track.sequence.push(noteData); drawPianoRoll(track); if (Tone.Transport.state === 'started') schedulePlayback(); }
+            function handleDelete(track, step, pitch) { const noteToDeleteIndex = track.sequence.findIndex(n => n.pitch === pitch && step >= n.step && step < (n.step + n.duration)); if (noteToDeleteIndex > -1) { track.sequence.splice(noteToDeleteIndex, 1); drawPianoRoll(track); if (Tone.Transport.state === 'started') schedulePlayback(); } }
+            function handleMouseDown(e, trackId) {
+                const targetTrack = tracks.find(t => t.id === trackId); if(!targetTrack || targetTrack.type !== 'note') return;
+                const canvas = e.target; const rect = canvas.getBoundingClientRect();
+                const step = Math.floor((e.clientX - rect.left) / (canvas.width / STEPS_PER_TRACK));
+                const noteIndex = Math.floor((e.clientY - rect.top) / (canvas.height / NOTE_PITCHES.length));
+                const pitch = NOTE_PITCHES[noteIndex];
+                if (e.button === 2) { handleDelete(targetTrack, step, pitch); return; }
+                if (e.button !== 0 || !selectedInstrument) return;
+                isDragging = true;
+                dragInfo = { track: targetTrack, canvas, rect, stepWidth: canvas.width / STEPS_PER_TRACK, noteHeight: canvas.height / NOTE_PITCHES.length, startStep: step, startPitch: pitch };
+                elements.notePreview.style.display = 'block'; updateNotePreview(e);
+                document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
+            }
+            function handleMouseMove(e) { if (!isDragging) return; updateNotePreview(e); }
+            function handleMouseUp(e) { if (!isDragging) return; isDragging = false; elements.notePreview.style.display = 'none'; const endStep = Math.floor((e.clientX - dragInfo.rect.left) / dragInfo.stepWidth); const duration = Math.max(1, endStep - dragInfo.startStep + 1); addNote(dragInfo.track, dragInfo.startStep, dragInfo.startPitch, duration); document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); }
+            function updateNotePreview(e) { const { rect, startStep, startPitch, stepWidth, noteHeight } = dragInfo; const noteIndex = NOTE_PITCHES.indexOf(startPitch); const currentStep = Math.floor((e.clientX - rect.left) / stepWidth); const duration = Math.max(1, currentStep - startStep + 1); elements.notePreview.style.left = `${rect.left + startStep * stepWidth}px`; elements.notePreview.style.top = `${rect.top + noteIndex * noteHeight}px`; elements.notePreview.style.width = `${duration * stepWidth}px`; elements.notePreview.style.height = `${noteHeight}px`; }
+            function toggleMute(trackId) { const track = tracks.find(t => t.id === trackId); if(!track) return; track.isMuted = !track.isMuted; if (track.isMuted) track.isSolo = false; updateTrackControls(); if (Tone.Transport.state === 'started') schedulePlayback(); }
+            function toggleSolo(trackId) { const track = tracks.find(t => t.id === trackId); if(!track) return; const newSoloState = !track.isSolo; tracks.forEach(t => t.isSolo = false); track.isSolo = newSoloState; if (track.isSolo) track.isMuted = false; updateTrackControls(); if (Tone.Transport.state === 'started') schedulePlayback(); }
+            function updateTrackControls() { tracks.forEach(track => { const trackEl = document.querySelector(`.track-container[data-track-id="${track.id}"]`); if(trackEl) { trackEl.querySelector('.mute-btn').classList.toggle('active', track.isMuted); trackEl.querySelector('.solo-btn').classList.toggle('active', track.isSolo); if (track.type === 'audio') trackEl.querySelector('.arm-record-btn').classList.toggle('active', track.isArmed); } }); }
+            function deleteTrack(trackId) { const trackIndex = tracks.findIndex(t => t.id === trackId); if(trackIndex > -1) { tracks.splice(trackIndex, 1); document.querySelector(`.track-container[data-track-id="${trackId}"]`).remove(); if (Tone.Transport.state === 'started') schedulePlayback(); } }
+            function clearTrack(trackId) { const track = tracks.find(t => t.id === trackId); if (track) { if (track.type === 'note') { track.sequence = []; drawPianoRoll(track); } else if (track.type === 'audio') { track.player?.dispose(); track.audioBlob = null; drawWaveform(track); } if (Tone.Transport.state === 'started') schedulePlayback(); } }
+            function addTrack(data = {}) {
+                trackCounter++; const newTrack = { id: trackCounter, name: data.name || `Pista ${trackCounter}`, type: 'note', sequence: data.sequence || [], volume: data.volume || 0, isMuted: data.isMuted || false, isSolo: data.isSolo || false, };
+                tracks.push(newTrack); const trackEl = document.createElement('div');
+                trackEl.className = 'track-container bg-gray-900/50 p-3 rounded-lg space-y-2'; trackEl.dataset.trackId = newTrack.id;
+                trackEl.innerHTML = `
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="track-name font-bold text-gray-300 cursor-pointer" title="Duplo clique para renomear">${newTrack.name}</span>
+                            <div class="flex items-center gap-4">
+                                <div class="flex items-center gap-1"><label class="text-xs text-gray-400">Vol</label><input type="range" min="-40" max="6" value="${newTrack.volume}" class="w-20 h-1 volume-slider"></div>
+                                <div class="flex gap-2">
+                                    <button class="track-btn mute-btn w-8 h-8 rounded-md bg-gray-600 text-xs font-bold" title="Mudo">M</button>
+                                    <button class="track-btn solo-btn w-8 h-8 rounded-md bg-gray-600 text-xs font-bold" title="Solo">S</button>
+                                    <button class="track-action-btn clear-track-btn w-8 h-8 rounded-md bg-gray-600 text-lg" title="Limpar Pista">🧹</button>
+                                    <button class="track-action-btn delete-track-btn w-8 h-8 rounded-md bg-red-800 text-lg" title="Apagar Pista">🗑️</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="relative">
+                            <div class="time-ruler-container h-6 bg-gray-700 text-xs text-gray-400 rounded-t-md"></div>
+                            <canvas class="piano-roll-canvas" data-track-id="${newTrack.id}"></canvas>
+                            <div class="playhead"></div>
+                        </div>`;
+                elements.tracksContainer.appendChild(trackEl);
+                trackEl.querySelector('.volume-slider').addEventListener('input', (e) => { newTrack.volume = parseFloat(e.target.value); if (Tone.Transport.state === 'started') schedulePlayback(); });
+                trackEl.querySelector('.mute-btn').addEventListener('click', () => toggleMute(newTrack.id));
+                trackEl.querySelector('.solo-btn').addEventListener('click', () => toggleSolo(newTrack.id));
+                trackEl.querySelector('.clear-track-btn').addEventListener('click', () => clearTrack(newTrack.id));
+                trackEl.querySelector('.delete-track-btn').addEventListener('click', () => deleteTrack(newTrack.id));
+                const trackNameEl = trackEl.querySelector('.track-name');
+                trackNameEl.addEventListener('dblclick', () => { trackNameEl.contentEditable = true; trackNameEl.focus(); });
+                trackNameEl.addEventListener('blur', () => { trackNameEl.contentEditable = false; newTrack.name = trackNameEl.textContent; });
+                trackEl.querySelector('.piano-roll-canvas').addEventListener('mousedown', (e) => handleMouseDown(e, newTrack.id));
+                trackEl.querySelector('.piano-roll-canvas').addEventListener('contextmenu', (e) => e.preventDefault());
+                const timeRulerContainer = trackEl.querySelector('.time-ruler-container');
+                for(let i=0; i < STEPS_PER_TRACK / 4; i++) { const rulerStep = document.createElement('div'); rulerStep.className = 'time-ruler-step'; rulerStep.textContent = i + 1; timeRulerContainer.appendChild(rulerStep); }
+                drawPianoRoll(newTrack); updateTrackControls();
+            }
+
+            function drawLiveInputMeter(trackId) {
+                const track = tracks.find(t => t.id === trackId);
+                const canvas = document.querySelector(`.waveform-canvas[data-track-id="${trackId}"]`);
+                if (!track || !canvas || !micAnalyser) return;
+
+                const ctx = canvas.getContext('2d');
+                const { width, height } = canvas;
+
+                function loop() {
+                    if (!track.isArmed) {
+                        ctx.clearRect(0, 0, width, height); 
+                        return;
+                    }
+
+                    requestAnimationFrame(loop);
+                    
+                    const values = micAnalyser.getValue();
+                    let maxDb = -Infinity;
+                    for (const db of values) {
+                        if (db > maxDb) maxDb = db;
+                    }
+                    const level = (maxDb + 100) / 100;
+                    
+                    ctx.clearRect(0, 0, width, height);
+                    ctx.fillStyle = '#38bdf8';
+                    ctx.fillRect(0, 0, width * Math.max(0, level), height);
+                }
+                loop();
+            }
+
+            async function addAudioTrack(data = {}) {
+                if (!mic) { 
+                    try { 
+                        mic = new Tone.UserMedia(); 
+                        await mic.open(); 
+                        
+                        micAnalyser = new Tone.Analyser('fft', 256);
+                        micGain = new Tone.Gain(0).connect(masterFilter);
+                        
+                        mic.connect(micAnalyser);
+                        micAnalyser.connect(micGain);
+
+                    } catch (e) { 
+                        elements.statusDisplay.textContent = "Erro: Microfone não autorizado."; 
+                        console.error(e);
+                        return; 
+                    } 
+                }
+                trackCounter++;
+                const newTrack = { id: trackCounter, name: data.name || `Pista de Voz ${trackCounter}`, type: 'audio', audioBlob: null, player: null, isArmed: false, volume: 0, isMuted: false, isSolo: false, recorder: null };
+                tracks.push(newTrack);
+                const trackEl = document.createElement('div');
+                trackEl.className = 'track-container bg-gray-900/50 p-3 rounded-lg space-y-2';
+                trackEl.dataset.trackId = newTrack.id;
+                trackEl.innerHTML = `
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="track-name font-bold text-gray-300 cursor-pointer" title="Duplo clique para renomear">${newTrack.name}</span>
+                            <div class="flex items-center gap-4">
+                                <div class="flex items-center gap-1"><label class="text-xs text-gray-400">Vol</label><input type="range" min="-40" max="6" value="0" class="w-20 h-1 volume-slider"></div>
+                                <div class="flex gap-2">
+                                    <button class="track-btn arm-record-btn w-8 h-8 rounded-full bg-gray-600 text-lg" title="Armar para Gravar">🔴</button>
+                                    <button class="track-btn mute-btn w-8 h-8 rounded-md bg-gray-600 text-xs font-bold" title="Mudo">M</button>
+                                    <button class="track-btn solo-btn w-8 h-8 rounded-md bg-gray-600 text-xs font-bold" title="Solo">S</button>
+                                    <button class="track-action-btn delete-track-btn w-8 h-8 rounded-md bg-red-800 text-lg" title="Apagar Pista">🗑️</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="relative"><canvas class="waveform-canvas" data-track-id="${newTrack.id}"></canvas><div class="playhead"></div></div>`;
+                elements.tracksContainer.appendChild(trackEl);
+                trackEl.querySelector('.arm-record-btn').addEventListener('click', () => armTrackForRecording(newTrack.id));
+                trackEl.querySelector('.volume-slider').addEventListener('input', (e) => { newTrack.volume = parseFloat(e.target.value); if (newTrack.player) newTrack.player.volume.value = newTrack.volume; });
+                trackEl.querySelector('.mute-btn').addEventListener('click', () => toggleMute(newTrack.id));
+                trackEl.querySelector('.solo-btn').addEventListener('click', () => toggleSolo(newTrack.id));
+                trackEl.querySelector('.delete-track-btn').addEventListener('click', () => deleteTrack(newTrack.id));
+            }
+            function armTrackForRecording(trackId) {
+                const targetTrack = tracks.find(t => t.id === trackId); if (!targetTrack) return;
+                
+                const canvas = document.querySelector(`.waveform-canvas[data-track-id="${trackId}"]`);
+                if (canvas) canvas.getContext('2d').clearRect(0,0, canvas.width, canvas.height);
+
+
+                if (targetTrack.isArmed) {
+                    targetTrack.isArmed = false;
+                    elements.statusDisplay.textContent = "Nenhuma pista armada.";
+                } else {
+                    tracks.forEach(t => { if (t.type === 'audio') t.isArmed = false; });
+                    targetTrack.isArmed = true;
+                    elements.statusDisplay.textContent = `Pista '${targetTrack.name}' armada. Fale para testar o sinal.`;
+                    drawLiveInputMeter(trackId);
+                }
+
+                updateTrackControls();
+            }
+            function drawWaveform(track) {
+                const canvas = document.querySelector(`canvas[data-track-id="${track.id}"]`); if (!canvas || !track.audioBlob) {
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    return;
+                };
+                const ctx = canvas.getContext('2d'); const { width, height } = canvas; ctx.clearRect(0, 0, width, height);
+                new Tone.Buffer(URL.createObjectURL(track.audioBlob), (buffer) => {
+                    if (buffer.duration < 0.1) return; 
+                    const data = buffer.getChannelData(0);
+                    ctx.strokeStyle = '#67e8f9'; ctx.lineWidth = 2; ctx.beginPath();
+                    const sliceWidth = width / data.length; let x = 0;
+                    for(let i = 0; i < data.length; i++) {
+                        const v = (data[i] + 1) / 2; const y = v * height;
+                        if(i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+                        x += sliceWidth;
+                    }
+                    ctx.stroke();
+                });
+            }
+            async function webmToWav(blob) {
+                elements.statusDisplay.textContent = 'Convertendo para WAV...';
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
+                const arrayBuffer = await blob.arrayBuffer();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                let numOfChan = audioBuffer.numberOfChannels, length = audioBuffer.length * numOfChan * 2 + 44, buffer = new ArrayBuffer(length), view = new DataView(buffer), channels = [], i, sample, offset = 0, pos = 0;
+                const setUint16 = (data) => { view.setUint16(pos, data, true); pos += 2; };
+                const setUint32 = (data) => { view.setUint32(pos, data, true); pos += 4; };
+                setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan); setUint32(audioBuffer.sampleRate); setUint32(audioBuffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
+                for (i = 0; i < numOfChan; i++) channels.push(audioBuffer.getChannelData(i));
+                while (pos < length) { for (i = 0; i < numOfChan; i++) { sample = Math.max(-1, Math.min(1, channels[i][offset])); sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0; view.setInt16(pos, sample, true); pos += 2; } offset++ }
+                return new Blob([view], { type: 'audio/wav' });
+            }
+            async function promptAndSaveFile(blob, fileName, type) { if (window.showSaveFilePicker) { try { const handle = await window.showSaveFilePicker({ suggestedName: fileName, types: [{ description: 'Audio File', accept: { [type]: [`.${fileName.split('.').pop()}`] } }], }); const writable = await handle.createWritable(); await writable.write(blob); await writable.close(); elements.statusDisplay.textContent = 'Arquivo salvo!'; } catch (err) { if (err.name !== 'AbortError') { console.error("Erro ao salvar:", err); elements.statusDisplay.textContent = 'Erro ao salvar.'; } else { elements.statusDisplay.textContent = 'Salvar cancelado.'; } } } else { const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = fileName; document.body.appendChild(a); a.click(); setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); elements.statusDisplay.textContent = 'Download iniciado!'; }, 100); } }
+            function saveProject() { /* ... implementação futura ... */ }
+            function loadProject(e) { /* ... implementação futura ... */ }
+
+            elements.playButton.addEventListener('click', async () => {
+                await initializeAudio();
+                
+                const armedTrack = tracks.find(t => t.isArmed);
+                if (armedTrack && mic && mic.stream) {
+                    const chunks = [];
+                    micRecorder = new MediaRecorder(mic.stream, { mimeType: 'audio/webm' });
+                    
+                    micRecorder.ondataavailable = e => {
+                        if (e.data.size > 0) {
+                            chunks.push(e.data);
+                        }
+                    };
+
+                    micRecorder.onstop = () => {
+                        if (chunks.length === 0) {
+                            console.warn("Nenhum dado de áudio foi gravado.");
+                            armedTrack.isArmed = false;
+                            updateTrackControls();
+                            return;
+                        }
+
+                        const blob = new Blob(chunks, { type: 'audio/webm' });
+                        armedTrack.audioBlob = blob;
+                        
+                        if(armedTrack.player) armedTrack.player.dispose();
+
+                        // **LÓGICA REFORÇADA**
+                        armedTrack.player = new Tone.Player().toDestination();
+                        armedTrack.player.connect(masterFilter); // Garante a conexão correta
+
+                        armedTrack.player.onload = () => {
+                            drawWaveform(armedTrack);
+                            // Reagenda a reprodução somente após o áudio estar carregado
+                            if (Tone.Transport.state === 'started') {
+                                schedulePlayback();
+                            }
+                        };
+                        
+                        armedTrack.player.load(URL.createObjectURL(blob));
+                        
+                        armedTrack.isArmed = false; 
+                        updateTrackControls();
+                    };
+                    
+                    micRecorder.start();
+                    elements.statusDisplay.textContent = `Gravando em '${armedTrack.name}'...`;
+                }
+
+                if (Tone.Transport.state !== 'started') {
+                    schedulePlayback(); 
+                    Tone.Transport.start(); 
+                }
+            });
+            elements.stopButton.addEventListener('click', () => { 
+                if (isAudioReady) { 
+                    Tone.Transport.stop(); 
+                    
+                    if (micRecorder && micRecorder.state === 'recording') {
+                         micRecorder.stop(); 
+                         elements.statusDisplay.textContent = "Gravação da pista parada.";
+                    } else {
+                        const armedTrack = tracks.find(t => t.isArmed);
+                        if(armedTrack) {
+                            armedTrack.isArmed = false;
+                            updateTrackControls();
+                        }
+                    }
+                } 
+            });
+            elements.bpmSlider.addEventListener('input', e => { const bpm = e.target.value; if(isAudioReady) Tone.Transport.bpm.value = bpm; elements.bpmDisplay.textContent = bpm; });
+            elements.kitSelect.addEventListener('change', (e) => { currentKit = e.target.value; selectedInstrument = null; document.querySelectorAll('.pad').forEach(p => p.classList.remove('selected')); createPads(); });
+            elements.addTrackButton.addEventListener('click', () => addTrack());
+            elements.addAudioTrackButton.addEventListener('click', addAudioTrack);
+            elements.reverbSlider.addEventListener('input', (e) => { if(isAudioReady) masterReverb.wet.value = parseFloat(e.target.value); });
+            elements.delayTimeSelect.addEventListener('change', (e) => { if(isAudioReady) masterDelay.delayTime.value = e.target.value; });
+            elements.delayFeedbackSlider.addEventListener('input', (e) => { if(isAudioReady) masterDelay.feedback.value = parseFloat(e.target.value); });
+            elements.delayWetSlider.addEventListener('input', (e) => { if(isAudioReady) masterDelay.wet.value = parseFloat(e.target.value); });
+            elements.filterSlider.addEventListener('input', (e) => { if(isAudioReady) masterFilter.frequency.value = parseFloat(e.target.value); });
+            
+            elements.startRecordButton.addEventListener('click', async () => {
+                await initializeAudio();
+                const chunks = [];
+                performanceRecorder.start();
+                performanceRecorder.ondataavailable = (e) => chunks.push(e.data);
+                performanceRecorder.onstop = () => { recordedBlob = new Blob(chunks, { 'type' : 'audio/webm;codecs=opus' }); };
+                elements.startRecordButton.classList.add('recording');
+                elements.statusDisplay.textContent = "Gravando performance...";
+                elements.startRecordButton.disabled = true; elements.stopRecordButton.disabled = false; elements.downloadButton.disabled = true;
+            });
+            elements.stopRecordButton.addEventListener('click', () => {
+                if (performanceRecorder.state === 'recording') { performanceRecorder.stop(); }
+                elements.startRecordButton.classList.remove('recording');
+                elements.statusDisplay.textContent = "Gravação concluída! Clique em Baixar.";
+                elements.startRecordButton.disabled = false; elements.stopRecordButton.disabled = true; elements.downloadButton.disabled = false;
+            });
+            
+            elements.downloadButton.addEventListener('click', async () => {
+                if (!recordedBlob) { elements.statusDisplay.textContent = "Grave algo primeiro."; alert("Grave algo primeiro."); return; }
+                const wavBlob = await webmToWav(recordedBlob);
+                if (wavBlob) {
+                    await promptAndSaveFile(wavBlob, 'minha-performance.wav', 'audio/wav');
+                }
+            });
+
+            elements.saveProjectBtn.addEventListener('click', saveProject);
+            elements.loadProjectBtn.addEventListener('click', () => elements.loadProjectInput.click());
+            elements.loadProjectInput.addEventListener('change', loadProject);
+
+            createPads(); addTrack();
+        });
+    </script>
+</body>
+</html>
