@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GrooveBox - Estúdio Completo</title>
+    <title>GrooveBox - Estúdio Completo (v.Final Corrigido)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -123,6 +123,7 @@
             let selectedInstrument = null; let isAudioReady = false; let currentKit = 'drums';
             let scheduledParts = []; let isDragging = false; let dragInfo = {};
             let masterReverb, masterDelay, masterFilter, performanceRecorder, recordedBlob, meter, mic, micRecorder, micGain, micAnalyser;
+            let isMicInitializing = false;
             
             let soundKits = {
                 drums: { sounds: {}, labels: ['Bumbo', 'Caixa', 'Chimbal', 'Tom', 'Clap', 'Prato', 'Cowbell', 'Conga'], colors: ['#f43f5e', '#3b82f6', '#facc15', '#fb7185', '#60a5fa', '#fde047', '#a855f7', '#f97316']},
@@ -214,7 +215,7 @@
                         scheduledParts.push(part);
                     } else if (track.type === 'audio' && track.player && track.player.loaded) {
                         track.player.volume.value = track.volume;
-                        track.player.start(0); // Inicia a partir do começo do loop
+                        track.player.start(0); 
                         scheduledParts.push(track.player);
                     }
                 });
@@ -284,25 +285,18 @@
                 const track = tracks.find(t => t.id === trackId);
                 const canvas = document.querySelector(`.waveform-canvas[data-track-id="${trackId}"]`);
                 if (!track || !canvas || !micAnalyser) return;
-
                 const ctx = canvas.getContext('2d');
                 const { width, height } = canvas;
-
                 function loop() {
                     if (!track.isArmed) {
                         ctx.clearRect(0, 0, width, height); 
                         return;
                     }
-
                     requestAnimationFrame(loop);
-                    
                     const values = micAnalyser.getValue();
                     let maxDb = -Infinity;
-                    for (const db of values) {
-                        if (db > maxDb) maxDb = db;
-                    }
+                    for (const db of values) { if (db > maxDb) maxDb = db; }
                     const level = (maxDb + 100) / 100;
-                    
                     ctx.clearRect(0, 0, width, height);
                     ctx.fillStyle = '#38bdf8';
                     ctx.fillRect(0, 0, width * Math.max(0, level), height);
@@ -310,26 +304,34 @@
                 loop();
             }
 
-            async function addAudioTrack(data = {}) {
-                if (!mic) { 
-                    try { 
-                        mic = new Tone.UserMedia(); 
-                        await mic.open(); 
-                        
-                        micAnalyser = new Tone.Analyser('fft', 256);
-                        micGain = new Tone.Gain(0).connect(masterFilter);
-                        
-                        mic.connect(micAnalyser);
-                        micAnalyser.connect(micGain);
-
-                    } catch (e) { 
-                        elements.statusDisplay.textContent = "Erro: Microfone não autorizado."; 
-                        console.error(e);
-                        return; 
-                    } 
+            // **FUNÇÃO CORRIGIDA**
+            async function initializeMicrophone() {
+                if (mic || isMicInitializing) return true; // Já está inicializado ou em processo
+                isMicInitializing = true;
+                elements.statusDisplay.textContent = "Inicializando microfone...";
+                try {
+                    mic = new Tone.UserMedia();
+                    await mic.open();
+                    
+                    micAnalyser = new Tone.Analyser('fft', 256);
+                    micGain = new Tone.Gain(0).connect(masterFilter);
+                    mic.connect(micAnalyser);
+                    micAnalyser.connect(micGain);
+                    elements.statusDisplay.textContent = "Microfone pronto. Clique novamente para adicionar a pista.";
+                    isMicInitializing = false;
+                    return true;
+                } catch (e) {
+                    console.error("ERRO CRÍTICO AO INICIALIZAR MICROFONE:", e);
+                    elements.statusDisplay.textContent = `Erro: Microfone não autorizado (${e.name}). Verifique as permissões do navegador/sistema.`;
+                    isMicInitializing = false;
+                    mic = null; // Reseta para poder tentar de novo
+                    return false;
                 }
+            }
+
+            function createAudioTrackUI() {
                 trackCounter++;
-                const newTrack = { id: trackCounter, name: data.name || `Pista de Voz ${trackCounter}`, type: 'audio', audioBlob: null, player: null, isArmed: false, volume: 0, isMuted: false, isSolo: false, recorder: null };
+                const newTrack = { id: trackCounter, name: `Pista de Voz ${trackCounter}`, type: 'audio', audioBlob: null, player: null, isArmed: false, volume: 0, isMuted: false, isSolo: false };
                 tracks.push(newTrack);
                 const trackEl = document.createElement('div');
                 trackEl.className = 'track-container bg-gray-900/50 p-3 rounded-lg space-y-2';
@@ -355,13 +357,24 @@
                 trackEl.querySelector('.solo-btn').addEventListener('click', () => toggleSolo(newTrack.id));
                 trackEl.querySelector('.delete-track-btn').addEventListener('click', () => deleteTrack(newTrack.id));
             }
+
+            async function addAudioTrack() {
+                // Se o microfone não foi inicializado, faz isso primeiro.
+                if (!mic) {
+                    const micReady = await initializeMicrophone();
+                    // Se a inicialização falhou, não faz mais nada.
+                    if (!micReady) return;
+                } else {
+                    // Se o microfone já está pronto, apenas cria a UI da pista.
+                    createAudioTrackUI();
+                }
+            }
+
+
             function armTrackForRecording(trackId) {
                 const targetTrack = tracks.find(t => t.id === trackId); if (!targetTrack) return;
-                
                 const canvas = document.querySelector(`.waveform-canvas[data-track-id="${trackId}"]`);
                 if (canvas) canvas.getContext('2d').clearRect(0,0, canvas.width, canvas.height);
-
-
                 if (targetTrack.isArmed) {
                     targetTrack.isArmed = false;
                     elements.statusDisplay.textContent = "Nenhuma pista armada.";
@@ -371,7 +384,6 @@
                     elements.statusDisplay.textContent = `Pista '${targetTrack.name}' armada. Fale para testar o sinal.`;
                     drawLiveInputMeter(trackId);
                 }
-
                 updateTrackControls();
             }
             function drawWaveform(track) {
@@ -382,7 +394,10 @@
                 };
                 const ctx = canvas.getContext('2d'); const { width, height } = canvas; ctx.clearRect(0, 0, width, height);
                 new Tone.Buffer(URL.createObjectURL(track.audioBlob), (buffer) => {
-                    if (buffer.duration < 0.1) return; 
+                    if (buffer.duration < 0.1) {
+                        console.warn("DEBUG: A gravação resultou em um buffer de áudio muito curto. A gravação pode estar vazia.");
+                        return;
+                    }
                     const data = buffer.getChannelData(0);
                     ctx.strokeStyle = '#67e8f9'; ctx.lineWidth = 2; ctx.beginPath();
                     const sliceWidth = width / data.length; let x = 0;
@@ -415,47 +430,39 @@
                 await initializeAudio();
                 
                 const armedTrack = tracks.find(t => t.isArmed);
-                if (armedTrack && mic && mic.stream) {
+                if (armedTrack && mic && mic.state === "started") {
                     const chunks = [];
-                    micRecorder = new MediaRecorder(mic.stream, { mimeType: 'audio/webm' });
-                    
-                    micRecorder.ondataavailable = e => {
-                        if (e.data.size > 0) {
-                            chunks.push(e.data);
-                        }
-                    };
-
+                    try {
+                        micRecorder = new MediaRecorder(mic.stream, { mimeType: 'audio/webm' });
+                    } catch (e) {
+                        console.error("DEBUG: Erro ao criar MediaRecorder:", e);
+                        alert("Erro crítico ao tentar iniciar o gravador. Verifique o console (F12).");
+                        return;
+                    }
+                    micRecorder.onstart = () => { console.log("DEBUG: MediaRecorder iniciado com sucesso. Estado:", micRecorder.state); };
+                    micRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
                     micRecorder.onstop = () => {
+                        console.log(`DEBUG: MediaRecorder parado. Total de chunks: ${chunks.length}`);
                         if (chunks.length === 0) {
-                            console.warn("Nenhum dado de áudio foi gravado.");
-                            armedTrack.isArmed = false;
-                            updateTrackControls();
-                            return;
+                            console.error("DEBUG: FALHA. Nenhum dado de áudio foi capturado.");
+                            armedTrack.isArmed = false; updateTrackControls(); return;
                         }
-
                         const blob = new Blob(chunks, { type: 'audio/webm' });
+                        console.log(`DEBUG: Blob criado. Tamanho: ${blob.size}, Tipo: ${blob.type}`);
                         armedTrack.audioBlob = blob;
-                        
                         if(armedTrack.player) armedTrack.player.dispose();
-
-                        // **LÓGICA REFORÇADA**
                         armedTrack.player = new Tone.Player().toDestination();
-                        armedTrack.player.connect(masterFilter); // Garante a conexão correta
-
+                        armedTrack.player.connect(masterFilter);
                         armedTrack.player.onload = () => {
+                            console.log("DEBUG: Tone.Player carregou o blob.");
                             drawWaveform(armedTrack);
-                            // Reagenda a reprodução somente após o áudio estar carregado
-                            if (Tone.Transport.state === 'started') {
-                                schedulePlayback();
-                            }
+                            if (Tone.Transport.state === 'started') schedulePlayback();
                         };
-                        
+                        armedTrack.player.onerror = (err) => { console.error("DEBUG: Erro no Tone.Player:", err); };
                         armedTrack.player.load(URL.createObjectURL(blob));
-                        
-                        armedTrack.isArmed = false; 
-                        updateTrackControls();
+                        armedTrack.isArmed = false; updateTrackControls();
                     };
-                    
+                    micRecorder.onerror = (e) => { console.error("DEBUG: Erro no MediaRecorder:", e); };
                     micRecorder.start();
                     elements.statusDisplay.textContent = `Gravando em '${armedTrack.name}'...`;
                 }
@@ -467,17 +474,11 @@
             });
             elements.stopButton.addEventListener('click', () => { 
                 if (isAudioReady) { 
-                    Tone.Transport.stop(); 
-                    
-                    if (micRecorder && micRecorder.state === 'recording') {
-                         micRecorder.stop(); 
-                         elements.statusDisplay.textContent = "Gravação da pista parada.";
-                    } else {
+                    if (Tone.Transport.state === 'started') Tone.Transport.stop();
+                    if (micRecorder && micRecorder.state === 'recording') micRecorder.stop(); 
+                    else {
                         const armedTrack = tracks.find(t => t.isArmed);
-                        if(armedTrack) {
-                            armedTrack.isArmed = false;
-                            updateTrackControls();
-                        }
+                        if(armedTrack) { armedTrack.isArmed = false; updateTrackControls(); }
                     }
                 } 
             });
