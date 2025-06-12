@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GrooveBox - Estúdio Completo (v.Final.Debug.2)</title>
+    <title>GrooveBox - Estúdio Completo (v.Nativa)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -122,8 +122,9 @@
             let tracks = []; let trackCounter = 0;
             let selectedInstrument = null; let isAudioReady = false; let currentKit = 'drums';
             let scheduledParts = []; let isDragging = false; let dragInfo = {};
-            let masterReverb, masterDelay, masterFilter, performanceRecorder, recordedBlob, meter, mic, micRecorder, micGain, micAnalyser;
+            let masterReverb, masterDelay, masterFilter, performanceRecorder, recordedBlob, meter, micRecorder, micAnalyser;
             let isMicInitializing = false;
+            let micStream = null; // **MUDANÇA: Usaremos uma variável para o stream nativo**
             
             let soundKits = {
                 drums: { sounds: {}, labels: ['Bumbo', 'Caixa', 'Chimbal', 'Tom', 'Clap', 'Prato', 'Cowbell', 'Conga'], colors: ['#f43f5e', '#3b82f6', '#facc15', '#fb7185', '#60a5fa', '#fde047', '#a855f7', '#f97316']},
@@ -305,17 +306,18 @@
             }
 
             async function initializeMicrophone() {
-                if (mic || isMicInitializing) return true;
+                if (micStream || isMicInitializing) return true;
                 isMicInitializing = true;
                 elements.statusDisplay.textContent = "Inicializando microfone...";
                 try {
-                    mic = new Tone.UserMedia();
-                    await mic.open();
+                    // **MUDANÇA: Usando a API Nativa do Navegador**
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     
+                    // Conecta o stream nativo ao analisador do Tone.js
+                    const source = Tone.context.createMediaStreamSource(micStream);
                     micAnalyser = new Tone.Analyser('fft', 256);
-                    micGain = new Tone.Gain(0).connect(masterFilter);
-                    mic.connect(micAnalyser);
-                    micAnalyser.connect(micGain);
+                    source.connect(micAnalyser);
+                    
                     elements.statusDisplay.textContent = "Microfone pronto!";
                     isMicInitializing = false;
                     return true;
@@ -323,7 +325,7 @@
                     console.error("ERRO CRÍTICO AO INICIALIZAR MICROFONE:", e);
                     elements.statusDisplay.textContent = `Erro: Microfone não autorizado (${e.name}). Verifique as permissões.`;
                     isMicInitializing = false;
-                    mic = null; 
+                    micStream = null; 
                     return false;
                 }
             }
@@ -360,7 +362,7 @@
             async function addAudioTrack() {
                 if (isMicInitializing) return;
 
-                if (!mic) {
+                if (!micStream) {
                     const micReady = await initializeMicrophone();
                     if (!micReady) return;
                 }
@@ -427,10 +429,11 @@
                 await initializeAudio();
                 
                 const armedTrack = tracks.find(t => t.isArmed);
-                if (armedTrack && mic && mic.state === "started") {
+                if (armedTrack && micStream && micStream.active) {
                     const chunks = [];
                     try {
-                        micRecorder = new MediaRecorder(mic.stream, { mimeType: 'audio/webm' });
+                        // **MUDANÇA: Usa o stream nativo e deixa o navegador escolher o mimeType**
+                        micRecorder = new MediaRecorder(micStream);
                     } catch (e) {
                         console.error("DEBUG: Erro ao criar MediaRecorder:", e);
                         alert("Erro crítico ao tentar iniciar o gravador. Verifique o console (F12).");
@@ -440,7 +443,7 @@
                         if (chunks.length === 0) {
                             armedTrack.isArmed = false; updateTrackControls(); return;
                         }
-                        const blob = new Blob(chunks, { type: 'audio/webm' });
+                        const blob = new Blob(chunks, { type: micRecorder.mimeType });
                         armedTrack.audioBlob = blob;
                         if(armedTrack.player) armedTrack.player.dispose();
                         armedTrack.player = new Tone.Player().toDestination();
