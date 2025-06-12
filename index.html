@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GrooveBox - Estúdio Completo (v.Finalíssima)</title>
+    <title>GrooveBox - Estúdio Completo (v.Final Definitiva)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -316,12 +316,12 @@
                     micGain = new Tone.Gain(0).connect(masterFilter);
                     mic.connect(micAnalyser);
                     micAnalyser.connect(micGain);
-                    elements.statusDisplay.textContent = "Microfone pronto. Clique novamente para adicionar a pista.";
+                    elements.statusDisplay.textContent = "Microfone pronto!";
                     isMicInitializing = false;
                     return true;
                 } catch (e) {
                     console.error("ERRO CRÍTICO AO INICIALIZAR MICROFONE:", e);
-                    elements.statusDisplay.textContent = `Erro: Microfone não autorizado (${e.name}). Verifique as permissões do navegador/sistema.`;
+                    elements.statusDisplay.textContent = `Erro: Microfone não autorizado (${e.name}). Verifique as permissões.`;
                     isMicInitializing = false;
                     mic = null; 
                     return false;
@@ -358,12 +358,15 @@
             }
 
             async function addAudioTrack() {
+                if (isMicInitializing) return; // Impede cliques múltiplos durante a inicialização
+
                 if (!mic) {
                     const micReady = await initializeMicrophone();
-                    if (!micReady) return;
-                } else {
-                    createAudioTrackUI();
+                    if (!micReady) return; // Se a inicialização falhar, para aqui.
                 }
+                
+                // Se o microfone estiver pronto (da primeira vez ou de cliques subsequentes), cria a pista.
+                createAudioTrackUI();
             }
 
             function armTrackForRecording(trackId) {
@@ -390,7 +393,7 @@
                 const ctx = canvas.getContext('2d'); const { width, height } = canvas; ctx.clearRect(0, 0, width, height);
                 new Tone.Buffer(URL.createObjectURL(track.audioBlob), (buffer) => {
                     if (buffer.duration < 0.1) {
-                        console.warn("DEBUG: A gravação resultou em um buffer de áudio muito curto. A gravação pode estar vazia.");
+                        console.warn("DEBUG: A gravação resultou em um buffer de áudio muito curto.");
                         return;
                     }
                     const data = buffer.getChannelData(0);
@@ -445,7 +448,7 @@
                         armedTrack.player.connect(masterFilter);
                         armedTrack.player.onload = () => {
                             drawWaveform(armedTrack);
-                            schedulePlayback(); // **CORREÇÃO FINAL: REMOVIDO O IF**
+                            schedulePlayback();
                         };
                         armedTrack.player.onerror = (err) => { console.error("DEBUG: Erro no Tone.Player:", err); };
                         armedTrack.player.load(URL.createObjectURL(blob));
