@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GrooveBox - Estúdio MIDI (Versão Final Estável)</title>
+    <title>GrooveBox - Estúdio MIDI (Versão Final)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,9 +22,10 @@
         .text-black { color: #000; }
         .track-btn, .control-button, .track-action-btn, .project-btn { transition: all 0.15s ease-in-out; }
         .control-button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .track-btn.active, .metronome-btn.active { filter: brightness(1.3); box-shadow: 0 0 8px 2px var(--tw-shadow-color); }
+        .track-btn.active, .metronome-btn.active, .selection-mode-btn.active { filter: brightness(1.3); box-shadow: 0 0 8px 2px var(--tw-shadow-color); }
         .mute-btn.active { background-color: #f97316; --tw-shadow-color: #f97316; }
         .solo-btn.active { background-color: #38bdf8; --tw-shadow-color: #38bdf8; }
+        .selection-mode-btn.active { background-color: #0ea5e9; --tw-shadow-color: #0ea5e9; }
         .metronome-btn.active { background-color: #10b981; --tw-shadow-color: #10b981; }
         #note-preview { position: absolute; background-color: rgba(103, 232, 249, 0.6); border: 1px solid #67e8f9; border-radius: 2px; pointer-events: none; z-index: 20; display: none; }
         .record-btn.recording { animation: pulse 1.5s infinite; }
@@ -61,10 +62,13 @@
                         <option value="drums" selected>Bateria 🥁</option>
                         <option value="classic909">Classic 909 📀</option>
                         <option value="lofi">Hip Hop Lofi 🎧</option>
+                        <option value="pianosEletroVintage">Pianos Eletro-Vintage 🎹</option>
+                        <option value="leadsDeSintetizador">Leads de Sintetizador 🚀</option>
+                        <option value="timbresDeGuitarra">Timbres de Guitarra 🎸</option>
                         <option value="trance">Trance / Dance 🕺</option>
-                        <option value="synths">Sintetizadores 🎹</option>
-                        <option value="piano">Piano 🎹</option>
                         <option value="8bit">8-Bit Legacy 👾</option>
+                        <option value="ritmosBrasileiros">Ritmos Brasileiros 🇧🇷</option>
+                        <option value="impactoCinematografico">Impacto Cinematográfico 🎬</option>
                     </select>
                 </div>
             </div>
@@ -119,13 +123,12 @@
                 <li><b>Adicione uma Pista:</b> Clique no botão azul "+ Adicionar Pista MIDI".</li>
                 <li><b>Selecione um Instrumento:</b> Clique novamente no pad do som que você quer usar (ex: 'Bumbo'). Ele ficará destacado.</li>
                 <li><b>Desenhe as Notas:</b> Na grade cinza que apareceu (o "Piano Roll"), clique nos quadrados para adicionar notas. Cada quadrado é um passo na sua música.</li>
-                <li><b>Dê Play!</b> Aperte o botão de Play para ouvir sua criação em loop!</li>
             </ol>
             <h3>Dicas de Edição</h3>
             <ul class="list-disc mt-2">
                 <li>- Para criar **notas mais longas**, clique em um quadrado e arraste para a direita.</li>
                 <li>- Para **apagar uma nota**, clique nela com o botão direito do mouse.</li>
-                <li>- Para **renomear uma pista**, dê um clique duplo sobre 'Pista 1' para poder renomeá-la.</li>
+                <li>- Para **selecionar e mover notas**, clique no ícone de cursor (🖱️) na pista, desenhe uma caixa sobre as notas e depois arraste o grupo selecionado.</li>
             </ul>
              <h3>Controles das Pistas</h3>
              <p class="mt-2">Ao lado de cada pista, você encontrará os controles de mixagem:</p>
@@ -161,7 +164,8 @@
                 closeHelpModalBtn: document.getElementById('close-help-modal-btn')
             };
 
-            const STEPS_PER_TRACK = 32; const LOOP_DURATION = "2m";
+            const STEPS_PER_TRACK = 32;
+            const LOOP_DURATION = "2:0:0"; 
             const NOTE_PITCHES = ['B5','A#5','A5','G#5','G5','F#5','F5','E5','D#5','D5','C#5','C5','B4','A#4','A4','G#4','G4','F#4','F4','E4','D#4','D4','C#4','C4','B3','A#3','A3','G#3','G3','F#3','F3','E3','D#3','D3','C#3','C3'];
             const PIANO_ROLL_NOTE_HEIGHT = 14; 
 
@@ -170,15 +174,20 @@
             let scheduledParts = []; let isDragging = false; let dragInfo = {};
             let masterReverb, masterDelay, masterFilter, performanceRecorder, recordedBlob, meter;
             let metronomeSynth, metronomeLoop, isMetronomeOn = false;
+
+            let selectionState = { isLassoing: false, isDraggingSelection: false, startX: 0, startY: 0, currentX: 0, currentY: 0, dragStartStep: 0, dragStartPitchIndex: 0 };
             
             let soundKits = {
                 drums: { sounds: {}, labels: ['Bumbo', 'Caixa', 'Chimbal', 'Tom', 'Clap', 'Prato', 'Cowbell', 'Conga'], colors: ['#f43f5e', '#3b82f6', '#facc15', '#fb7185', '#60a5fa', '#fde047', '#a855f7', '#f97316']},
                 classic909: { sounds: {}, labels: ['Bumbo 909', 'Caixa 909', 'Chimbal F.', 'Tom 909', 'Clap 909', 'Prato 909', 'Chimbal A.', 'Rimshot'], colors: ['#f9a8d4', '#fde047', '#fde047', '#93c5fd', '#d8b4fe', '#fde047', '#fde047', '#a7f3d0']},
                 lofi: { sounds: {}, labels: ['Kick Gordo', 'Snare', 'Hat Fechado', 'Hat Aberto', 'Ride', 'Bass', 'Acorde', 'Chiado Vinil'], colors: ['#78716c', '#a8a29e', '#d6d3d1', '#d6d3d1', '#a8a29e', '#57534e', '#e7e5e4', '#f5f5f4']},
+                pianosEletroVintage: { sounds: {}, notes: ['C3', 'E3', 'G3', 'C4', 'E4', 'G4', 'C5', 'E5'], labels: ['Rhodes Suave', 'Wurlitzer', 'Piano FM (DX7)', 'Clavinet Funky', 'Órgão de Rock', 'Vibrafone', 'Piano c/ Chorus', 'Toy Piano'], colors: ['#e67e22', '#d35400', '#8e44ad', '#2c3e50', '#c0392b', '#16a085', '#2980b9', '#f1c40f']},
+                leadsDeSintetizador: { sounds: {}, notes: ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'], labels: ['Lead Analógico', 'Lead Quadrado', 'Super Saw', 'Lead Ácido', 'Lead com Glide', 'Lead Distorcido', 'Lead Brilhante', 'Lead de Baixo'], colors: ['#00a8ff', '#9c88ff', '#fbc531', '#4cd137', '#487eb0', '#e84118', '#7f8fa6', '#273c75']},
+                timbresDeGuitarra: { sounds: {}, notes: ['E2', 'A2', 'D3', 'G3', 'B3', 'E4', 'A4', 'C5'], labels: ['Kalimba Mágica', 'E-Piano Funky', 'Guitar Clean', 'Guitar Chorus', 'Guitar Tremolo', 'Rock Clássico', 'Metal Pesado', 'Lead c/ Delay'], colors: ['#D2B48C', '#CD853F', '#4682B4', '#5F9EA0', '#BC8F8F', '#FF6347', '#B22222', '#8B0000']},
                 trance: { sounds: {}, labels: ['Kick 909', 'Clap', 'Closed Hat', 'Open Hat', 'Snare', 'Tom', 'Synth Stab', 'Bassline (C)'], colors: ['#a855f7', '#f472b6', '#cbd5e1', '#94a3b8', '#fb923c', '#818cf8', '#67e8f9', '#5eead4']},
-                synths: { sounds: {}, notes: ['C2', 'G2', 'C3', 'E3', 'G3', 'C4', 'G4', 'A4'], labels: ['Bass 1', 'Bass 2', 'Lead 1', 'Lead 2', 'Pad Saw', 'Pad Sqr', 'Lead Saw', 'Lead Tri'], colors: ['#14b8a6', '#2dd4bf', '#5eead4', '#22c55e', '#4ade80', '#86efac', '#a3e635', '#bef264'] },
-                piano: { sounds: {}, notes: ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5'], labels: ['Dó', 'Ré', 'Mi', 'Fá', 'Sol', 'Lá', 'Si', 'Dó+'], colors: ['#e2e8f0', '#cbd5e1', '#94a3b8', '#e2e8f0', '#cbd5e1', '#94a3b8', '#e2e8f0', '#cbd5e1']},
-                '8bit': { sounds: {}, labels: ['Lead', 'Baixo', 'Ruído Hit', 'Arp', 'Laser', 'Moeda', 'Explosão', 'PowerUp'], colors: ['#ff6a4d', '#ffb000', '#e3e3e3', '#39f4f4', '#ff3131', '#f6d92f', '#ffffff', '#39d535']}
+                '8bit': { sounds: {}, labels: ['Lead', 'Baixo', 'Ruído Hit', 'Arp', 'Laser', 'Moeda', 'Explosão', 'PowerUp'], colors: ['#ff6a4d', '#ffb000', '#e3e3e3', '#39f4f4', '#ff3131', '#f6d92f', '#ffffff', '#39d535']},
+                ritmosBrasileiros: { sounds: {}, labels: ['Surdo Grave', 'Caixa', 'Pandeiro', 'Agogô', 'Tamborim', 'Reco-reco', 'Repique', 'Apito'], notes: ['C2', 'E3', 'G3', 'C4', 'E4', 'A4', 'D3', 'C6'], colors: ['#009c3b', '#ffdf00', '#002776', '#f472b6', '#3b82f6', '#a855f7', '#f97316', '#e11d48']},
+                impactoCinematografico: { sounds: {}, labels: ['Timpani Hit', 'Orchestra Hit', 'Saxofone', 'Cymbal Swell', 'Snare Marcha', 'Trompas', 'Sub Boom', 'Sino Tubular'], notes: ['C2', 'C4', 'G4', 'A3', 'E3', 'F3', 'C1', 'C5'], colors: ['#4a4e69', '#ffd670', '#adb5bd', '#f2e9e4', '#9a8c98', '#c9ada7', '#22223b', '#e0e1dd']}
             };
 
             async function initializeAudio() {
@@ -197,16 +206,23 @@
                 
                 const masterChainInput = masterFilter;
                 const createSynth = (factory) => factory().connect(masterChainInput);
-                
-                soundKits.drums.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 10, oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4, attackCurve: "exponential" } })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.005, decay: 0.2, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 200, envelope: { attack: 0.001, decay: 0.1, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000 })), 'sound4': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 5 })), 'sound5': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0 } })), 'sound6': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 1.4, release: 0.2 }, harmonicity: 5.1, modulationIndex: 32, resonance: 8000 })), 'sound7': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.2, release: 0.1 }, harmonicity: 3, modulationIndex: 20, resonance: 4000 })), 'sound8': createSynth(() => new Tone.FMSynth({ harmonicity: 1.5, modulationIndex: 5, envelope: { attack: 0.01, decay: 0.3 } })) };
-                soundKits.classic909.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.02, octaves: 6, oscillator: {type: 'sine'}, envelope: {attack: 0.001, decay: 0.3, sustain: 0.01, release: 0.2} })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'white', playbackRate: 1.5 }, envelope: { attack: 0.001, decay: 0.25, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.05, release: 0.05 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3000 })), 'sound4': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.08, octaves: 4, oscillator: {type: 'triangle'}, envelope: {attack: 0.01, decay: 0.3, sustain: 0.01, release: 0.1} })), 'sound5': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.08, sustain: 0 } })), 'sound6': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 0.8, release: 0.1 }, harmonicity: 4, modulationIndex: 20, resonance: 6000 })), 'sound7': createSynth(() => new Tone.MetalSynth({ frequency: 500, envelope: { attack: 0.001, decay: 0.3, release: 0.1 }, harmonicity: 6, modulationIndex: 40, resonance: 4000 })), 'sound8': createSynth(() => new Tone.FMSynth({ harmonicity: 2, modulationIndex: 2, envelope: { attack: 0.005, decay: 0.05 } })) };
-                soundKits.lofi.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 4, envelope: { attack: 0.001, decay: 0.5, sustain: 0 } })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: "pink" }, envelope: { attack: 0.001, decay: 0.15, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 0.05, release: 0.05 }, harmonicity: 5.1, modulationIndex: 32, resonance: 2000 })), 'sound4': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 0.4, release: 0.05 }, harmonicity: 6, modulationIndex: 32, resonance: 2500 })), 'sound5': createSynth(() => new Tone.MetalSynth({ frequency: 250, envelope: { attack: 0.002, decay: 0.8, release: 0.1 }, harmonicity: 3, modulationIndex: 40, resonance: 3000 })), 'sound6': createSynth(() => new Tone.MonoSynth({ oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.3, release: 0.2 } })), 'sound7': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { harmonicity: 1.5, envelope: { attack: 0.02, decay: 1.5, sustain: 0.1, release: 2 } })), 'sound8': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'brown', playbackRate: 0.5 }, envelope: { attack: 0.05, decay: 4, sustain: 0 } })) };
-                soundKits.trance.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 8, oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: 0.3, sustain: 0.01, release: 0.2 } })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.05, release: 0.05 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3500 })), 'sound4': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.5, release: 0.1 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3500 })), 'sound5': createSynth(() => new Tone.NoiseSynth({ noise: { type: "white", playbackRate: 2 }, envelope: { attack: 0.005, decay: 0.15, sustain: 0 } })), 'sound6': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 2, oscillator: { type: 'triangle' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0 } })), 'sound7': createSynth(() => new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsawtooth', count: 3, spread: 30 }, envelope: { attack: 0.01, decay: 0.5, sustain: 0.2, release: 0.3 } })), 'sound8': createSynth(() => new Tone.MonoSynth({ oscillator: { type: 'sawtooth' }, filter: { Q: 2, type: 'lowpass', rolloff: -24 }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.4 }, filterEnvelope: { attack: 0.05, decay: 0.2, sustain: 0, release: 0.8, baseFrequency: 40, octaves: 4 } })) };
-                soundKits.synths.sounds = { 'sound1': createSynth(() => new Tone.MonoSynth({oscillator:{type:"fmsquare"},envelope:{attack:0.01,decay:0.1,release:0.2}})), 'sound2': createSynth(() => new Tone.FMSynth({harmonicity:1,modulationIndex:10,envelope:{attack:0.01,decay:0.2}})), 'sound3': createSynth(() => new Tone.AMSynth({harmonicity:1.5,envelope:{attack:0.01,decay:0.5,release:1}})), 'sound4': createSynth(() => new Tone.FMSynth({harmonicity:1.5,modulationIndex:5,envelope:{attack:0.01,decay:1,release:1}})), 'sound5': createSynth(() => new Tone.PolySynth(Tone.Synth,{oscillator:{type:'sawtooth'},envelope:{attack:0.1,decay:0.5,sustain:0.4,release:0.8}})), 'sound6': createSynth(() => new Tone.PolySynth(Tone.Synth,{oscillator:{type:'square'},envelope:{attack:0.1,decay:0.5,sustain:0.4,release:0.8}})), 'sound7': createSynth(() => new Tone.Synth({oscillator: {type: 'sawtooth'}, envelope: {attack: 0.02, decay: 0.3, release: 0.2}})), 'sound8': createSynth(() => new Tone.Synth({oscillator: {type: 'triangle'}, envelope: {attack: 0.05, decay: 0.5, release: 0.4}})) };
-                soundKits.piano.sounds = { 'main': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { "harmonicity": 3.01, "modulationIndex": 14, "envelope": { "attack": 0.01, "decay": 0.2, "sustain": 0.1 }})) };
-                soundKits['8bit'].sounds = { 'sound1': createSynth(() => new Tone.MonoSynth({oscillator: {type: "pulse", width: 0.6}, envelope: {attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.1}})), 'sound2': createSynth(() => new Tone.MonoSynth({oscillator: {type: "square"}, envelope: {attack: 0.05, decay: 0.3, sustain: 0.1, release: 0.4}, filter: {Q: 6, type: "lowpass", rolloff: -24}, filterEnvelope: {attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.8, baseFrequency: 80, octaves: 2}})), 'sound3': createSynth(() => new Tone.NoiseSynth({noise: {type: "white"}, envelope: {attack: 0.001, decay: 0.1, sustain: 0}})), 'sound4': createSynth(() => new Tone.PolySynth(Tone.FMSynth, {harmonicity: 3, modulationIndex: 10, modulation: {type: "square"}, envelope: {attack: 0.01, decay: 0.2, sustain: 0}, modulationEnvelope: {attack: 0.01, decay: 0.5, sustain: 0}})), 'sound5': createSynth(() => new Tone.Synth({oscillator: {type: 'sawtooth'}, envelope: {attack: 0.01, decay: 0.3, sustain: 0}})), 'sound6': createSynth(() => new Tone.Synth({oscillator: {type: 'sine'}, envelope: {attack: 0.005, decay: 0.1, sustain: 0}})), 'sound7': createSynth(() => new Tone.NoiseSynth({noise: {type: "pink"}, envelope: {attack: 0.001, decay: 0.5, sustain: 0}})), 'sound8': createSynth(() => new Tone.Synth({oscillator: {type: 'square'}, envelope: {attack: 0.001, decay: 0.2, sustain: 0}})), };
-                
-                // CORREÇÃO: Metrônomo agora se conecta à cadeia de efeitos master para ser gravado
+
+                Object.keys(soundKits).forEach(kitName => {
+                    const kit = soundKits[kitName];
+                    switch (kitName) {
+                        case 'drums': kit.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 10, oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 1.4, attackCurve: "exponential" } })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.005, decay: 0.2, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 200, envelope: { attack: 0.001, decay: 0.1, release: 0.01 }, harmonicity: 5.1, modulationIndex: 32, resonance: 4000 })), 'sound4': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 5 })), 'sound5': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0 } })), 'sound6': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 1.4, release: 0.2 }, harmonicity: 5.1, modulationIndex: 32, resonance: 8000 })), 'sound7': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.2, release: 0.1 }, harmonicity: 3, modulationIndex: 20, resonance: 4000 })), 'sound8': createSynth(() => new Tone.FMSynth({ harmonicity: 1.5, modulationIndex: 5, envelope: { attack: 0.01, decay: 0.3 } })) }; break;
+                        case 'classic909': kit.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.02, octaves: 6, oscillator: {type: 'sine'}, envelope: {attack: 0.001, decay: 0.3, sustain: 0.01, release: 0.2} })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'white', playbackRate: 1.5 }, envelope: { attack: 0.001, decay: 0.25, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.05, release: 0.05 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3000 })), 'sound4': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.08, octaves: 4, oscillator: {type: 'triangle'}, envelope: {attack: 0.01, decay: 0.3, sustain: 0.01, release: 0.1} })), 'sound5': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.08, sustain: 0 } })), 'sound6': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 0.8, release: 0.1 }, harmonicity: 4, modulationIndex: 20, resonance: 6000 })), 'sound7': createSynth(() => new Tone.MetalSynth({ frequency: 500, envelope: { attack: 0.001, decay: 0.3, release: 0.1 }, harmonicity: 6, modulationIndex: 40, resonance: 4000 })), 'sound8': createSynth(() => new Tone.FMSynth({ harmonicity: 2, modulationIndex: 2, envelope: { attack: 0.005, decay: 0.05 } })) }; break;
+                        case 'lofi': kit.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 4, envelope: { attack: 0.001, decay: 0.5, sustain: 0 } })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: "pink" }, envelope: { attack: 0.001, decay: 0.15, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 0.05, release: 0.05 }, harmonicity: 5.1, modulationIndex: 32, resonance: 2000 })), 'sound4': createSynth(() => new Tone.MetalSynth({ frequency: 300, envelope: { attack: 0.001, decay: 0.4, release: 0.05 }, harmonicity: 6, modulationIndex: 32, resonance: 2500 })), 'sound5': createSynth(() => new Tone.MetalSynth({ frequency: 250, envelope: { attack: 0.002, decay: 0.8, release: 0.1 }, harmonicity: 3, modulationIndex: 40, resonance: 3000 })), 'sound6': createSynth(() => new Tone.MonoSynth({ oscillator: { type: 'sine' }, envelope: { attack: 0.01, decay: 0.3, release: 0.2 } })), 'sound7': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { harmonicity: 1.5, envelope: { attack: 0.02, decay: 1.5, sustain: 0.1, release: 2 } })), 'sound8': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'brown', playbackRate: 0.5 }, envelope: { attack: 0.05, decay: 4, sustain: 0 } })) }; break;
+                        case 'pianosEletroVintage': kit.sounds = { 'sound1': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { harmonicity: 3.5, modulationIndex: 10, envelope: { attack: 0.02, decay: 0.5, sustain: 0.2, release: 0.1 } })), 'sound2': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { harmonicity: 2.5, modulationIndex: 12, envelope: { attack: 0.01, decay: 0.3, sustain: 0.1 } })), 'sound3': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { harmonicity: 5.0, modulationIndex: 15, envelope: { attack: 0.01, decay: 0.4, sustain: 0.0 } })), 'sound4': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { harmonicity: 2, modulationIndex: 20, envelope: { attack: 0.005, decay: 0.1 } })), 'sound5': createSynth(() => new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsine' }, envelope: { attack: 0.1, decay: 0.8 } })), 'sound6': createSynth(() => new Tone.MetalSynth({ frequency: 200, harmonicity: 8, modulationIndex: 10, envelope: { attack: 0.01, decay: 0.8 } })), 'sound7': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { harmonicity: 3.01, modulationIndex: 14, detune: 5, envelope: { attack: 0.01, decay: 0.2, sustain: 0.1 }})), 'sound8': createSynth(() => new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' }, envelope: { attack: 0.001, decay: 0.5, release: 0.1 } })) }; break;
+                        case 'leadsDeSintetizador': kit.sounds = { 'sound1': createSynth(() => new Tone.MonoSynth({ oscillator: { type: 'sawtooth' }, filter: { Q: 1, type: 'lowpass', rolloff: -24 }, envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.2 } })), 'sound2': createSynth(() => new Tone.MonoSynth({ oscillator: { type: 'pulse' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.1, release: 0.1 } })), 'sound3': createSynth(() => new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsawtooth', count: 7, detune: 20 }, envelope: { attack: 0.05, decay: 0.5, sustain: 0.2, release: 0.4 } })), 'sound4': createSynth(() => new Tone.MonoSynth({ oscillator: { type: 'square' }, filter: { Q: 8, type: 'lowpass', rolloff: -12 }, envelope: { attack: 0.01, decay: 0.3 }, filterEnvelope: { attack: 0.02, decay: 0.4, sustain: 0, baseFrequency: 200, octaves: 3 } })), 'sound5': createSynth(() => new Tone.MonoSynth({ portamento: 0.1, oscillator: { type: 'sawtooth' }, envelope: { attack: 0.02, decay: 0.2 } })), 'sound6': createSynth(() => { const dist = new Tone.Distortion(0.4); return new Tone.MonoSynth({ oscillator: { type: 'sawtooth' }, filter: { Q: 3, type: 'lowpass' }, envelope: { attack: 0.01, decay: 0.2} }).connect(dist); }), 'sound7': createSynth(() => new Tone.FMSynth({ harmonicity: 1.5, modulationIndex: 8, envelope: { attack: 0.01, decay: 0.5 } })), 'sound8': createSynth(() => new Tone.MonoSynth({ oscillator: { type: 'fmsquare' }, filter: { Q: 2, type: 'lowpass' }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.1 } })) }; break;
+                        case 'timbresDeGuitarra': kit.sounds = { 'sound1': createSynth(() => new Tone.MetalSynth({ frequency: 180, harmonicity: 5, modulationIndex: 12, envelope: { attack: 0.01, decay: 0.8 } })), 'sound2': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { harmonicity: 1.5, modulationIndex: 15, envelope: { attack: 0.01, decay: 0.3 }})), 'sound3': createSynth(() => new Tone.PolySynth(Tone.FMSynth, { harmonicity: 2, modulationIndex: 5, envelope: { attack: 0.005, decay: 0.2 } })), 'sound4': createSynth(() => { const chorus = new Tone.Chorus(4, 2.5, 0.5).start(); return new Tone.PolySynth(Tone.FMSynth, { harmonicity: 2.2, modulationIndex: 6 }).connect(chorus); }), 'sound5': createSynth(() => { const tremolo = new Tone.Tremolo(9, 0.75).start(); return new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sine' } }).connect(tremolo); }), 'sound6': createSynth(() => { const dist = new Tone.Distortion(0.3); return new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsawtooth', count: 2 } }).connect(dist); }), 'sound7': createSynth(() => { const dist = new Tone.Distortion(0.8); return new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' } }).connect(dist); }), 'sound8': createSynth(() => { const delay = new Tone.FeedbackDelay("8n", 0.4); return new Tone.MonoSynth({ oscillator: { type: 'sawtooth' }, envelope: { attack: 0.01, decay: 0.3 } }).connect(delay); }) }; break;
+                        case 'trance': kit.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 8, oscillator: { type: "sine" }, envelope: { attack: 0.001, decay: 0.3, sustain: 0.01, release: 0.2 } })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.05, release: 0.05 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3500 })), 'sound4': createSynth(() => new Tone.MetalSynth({ frequency: 400, envelope: { attack: 0.001, decay: 0.5, release: 0.1 }, harmonicity: 5.1, modulationIndex: 32, resonance: 3500 })), 'sound5': createSynth(() => new Tone.NoiseSynth({ noise: { type: "white", playbackRate: 2 }, envelope: { attack: 0.005, decay: 0.15, sustain: 0 } })), 'sound6': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 2, oscillator: { type: 'triangle' }, envelope: { attack: 0.01, decay: 0.2, sustain: 0 } })), 'sound7': createSynth(() => new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsawtooth', count: 3, spread: 30 }, envelope: { attack: 0.01, decay: 0.5, sustain: 0.2, release: 0.3 } })), 'sound8': createSynth(() => new Tone.MonoSynth({ oscillator: { type: 'sawtooth' }, filter: { Q: 2, type: 'lowpass', rolloff: -24 }, envelope: { attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.4 }, filterEnvelope: { attack: 0.05, decay: 0.2, sustain: 0, release: 0.8, baseFrequency: 40, octaves: 4 } })) }; break;
+                        case '8bit': kit.sounds = { 'sound1': createSynth(() => new Tone.MonoSynth({oscillator: {type: "pulse", width: 0.6}, envelope: {attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.1}})), 'sound2': createSynth(() => new Tone.MonoSynth({oscillator: {type: "square"}, envelope: {attack: 0.05, decay: 0.3, sustain: 0.1, release: 0.4}, filter: {Q: 6, type: "lowpass", rolloff: -24}, filterEnvelope: {attack: 0.01, decay: 0.1, sustain: 0.2, release: 0.8, baseFrequency: 80, octaves: 2}})), 'sound3': createSynth(() => new Tone.NoiseSynth({noise: {type: "white"}, envelope: {attack: 0.001, decay: 0.1, sustain: 0}})), 'sound4': createSynth(() => new Tone.PolySynth(Tone.FMSynth, {harmonicity: 3, modulationIndex: 10, modulation: {type: "square"}, envelope: {attack: 0.01, decay: 0.2, sustain: 0}, modulationEnvelope: {attack: 0.01, decay: 0.5, sustain: 0}})), 'sound5': createSynth(() => new Tone.Synth({oscillator: {type: 'sawtooth'}, envelope: {attack: 0.01, decay: 0.3, sustain: 0}})), 'sound6': createSynth(() => new Tone.Synth({oscillator: {type: 'sine'}, envelope: {attack: 0.005, decay: 0.1, sustain: 0}})), 'sound7': createSynth(() => new Tone.NoiseSynth({noise: {type: "pink"}, envelope: {attack: 0.001, decay: 0.5, sustain: 0}})), 'sound8': createSynth(() => new Tone.Synth({oscillator: {type: 'square'}, envelope: {attack: 0.001, decay: 0.2, sustain: 0}})), }; break;
+                        case 'ritmosBrasileiros': kit.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 2, oscillator: {type: 'sine'}, envelope: { attack: 0.001, decay: 0.5, sustain: 0 } })), 'sound2': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'white', playbackRate: 1.2 }, envelope: { attack: 0.001, decay: 0.15, sustain: 0 } })), 'sound3': createSynth(() => new Tone.MetalSynth({ frequency: 300, harmonicity: 6, modulationIndex: 16, envelope: { attack: 0.001, decay: 0.2, release: 0.05 } })), 'sound4': createSynth(() => new Tone.FMSynth({ harmonicity: 4, modulationIndex: 2, envelope: { attack: 0.005, decay: 0.15 } })), 'sound5': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 8, envelope: { attack: 0.001, decay: 0.1, release: 0.1 } })), 'sound6': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'pink', playbackRate: 4 }, envelope: { attack: 0.01, decay: 0.1, sustain: 0 } })), 'sound7': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.02, octaves: 6, envelope: { attack: 0.001, decay: 0.2, release: 0.1 } })), 'sound8': createSynth(() => new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.001, decay: 0.2, sustain: 0.1, release: 0.1 } })) }; break;
+                        case 'impactoCinematografico': kit.sounds = { 'sound1': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.2, octaves: 3, envelope: { attack: 0.01, decay: 1.2 } })), 'sound2': createSynth(() => new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsawtooth', count: 5 }, envelope: { attack: 0.01, decay: 0.8, sustain: 0.1, release: 0.4 } })), 'sound3': createSynth(() => new Tone.MonoSynth({ oscillator: { type: 'fatsawtooth', count: 3, spread: 20 }, envelope: { attack: 0.05, decay: 0.3, sustain: 0.4, release: 0.2 }, filter: { Q: 2, type: 'lowpass', rolloff: -24 }, filterEnvelope: { attack: 0.06, decay: 0.2, sustain: 0.5, release: 0.8, baseFrequency: 400, octaves: 3 } })), 'sound4': createSynth(() => new Tone.MetalSynth({ frequency: 200, envelope: { attack: 0.6, decay: 1.0, release: 0.2 }, resonance: 6000 })), 'sound5': createSynth(() => new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0 } })), 'sound6': createSynth(() => new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' }, filter: { type: 'lowpass', frequency: 1200 }, envelope: { attack: 0.05, decay: 0.6 } })), 'sound7': createSynth(() => new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 1, envelope: { attack: 0.01, decay: 1.5, sustain: 0.2 } })), 'sound8': createSynth(() => new Tone.MetalSynth({ frequency: 440, harmonicity: 10.5, modulationIndex: 10, envelope: { attack: 0.01, decay: 1.5 } }))}; break;
+                    }
+                });
+
                 metronomeSynth = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.1, sustain: 0.01, release: 0.1 } }).connect(masterChainInput);
                 metronomeLoop = new Tone.Loop((time) => { if (isMetronomeOn) { metronomeSynth.triggerAttackRelease('C6', '16n', time); } }, '4n').start(0);
 
@@ -222,7 +238,7 @@
             function createPads() {
                 elements.padContainer.innerHTML = ''; const kit = soundKits[currentKit];
                 kit.labels.forEach((label, i) => {
-                    const soundId = (currentKit === 'piano') ? 'main' : `sound${i + 1}`; const pad = document.createElement('button');
+                    const soundId = `sound${i + 1}`; const pad = document.createElement('button');
                     pad.className = 'pad h-20 rounded-lg font-semibold flex items-center justify-center cursor-pointer select-none p-2 text-center';
                     const bgColor = kit.colors[i]; pad.style.backgroundColor = bgColor;
                     if (getLuminance(bgColor) > 160) pad.classList.add('text-black'); else pad.classList.add('text-white');
@@ -238,12 +254,18 @@
                 const soundToUse = soundKits[currentKit].sounds[soundId];
                 selectedInstrument = { id: soundId, color: padElement.style.backgroundColor, sound: soundToUse, kit: currentKit };
                 const noteToPlay = padElement.dataset.note || 'C4';
-                if (soundToUse instanceof Tone.NoiseSynth) { soundToUse.triggerAttack(); } 
-                else { soundToUse.triggerAttackRelease(noteToPlay, "8n"); }
+                
+                if (soundToUse instanceof Tone.NoiseSynth) { 
+                    soundToUse.triggerAttack(); 
+                } else { 
+                    soundToUse.triggerAttackRelease(noteToPlay, "8n"); 
+                }
+                
                 document.querySelectorAll('.pad').forEach(p => p.classList.remove('selected'));
                 padElement.classList.add('selected');
                 elements.statusDisplay.textContent = `Instrumento selecionado: ${padElement.textContent}.`;
             }
+            
             function drawPianoRoll(track) {
                 const canvas = document.querySelector(`canvas[data-track-id="${track.id}"]`); if (!canvas) return;
                 const ctx = canvas.getContext('2d');
@@ -252,17 +274,58 @@
                 const { width, height } = canvas;
                 const stepWidth = width / STEPS_PER_TRACK;
                 const noteHeight = PIANO_ROLL_NOTE_HEIGHT;
+                
                 ctx.clearRect(0, 0, width, height);
+                
                 NOTE_PITCHES.forEach((note, i) => { ctx.fillStyle = note.includes('#') ? '#4b5563' : '#374151'; ctx.fillRect(0, i * noteHeight, width, noteHeight); });
                 for (let i = 1; i < STEPS_PER_TRACK; i++) { ctx.strokeStyle = '#2d3748'; ctx.globalAlpha = (i % 4 === 0) ? 0.5 : 0.2; ctx.beginPath(); ctx.moveTo(i * stepWidth, 0); ctx.lineTo(i * stepWidth, height); ctx.stroke(); }
                 ctx.globalAlpha = 1.0;
-                track.sequence.forEach(noteData => { const noteIndex = NOTE_PITCHES.indexOf(noteData.pitch); if (noteIndex > -1) { const noteWidth = stepWidth * (noteData.duration || 1); ctx.fillStyle = noteData.color; ctx.fillRect(noteData.step * stepWidth, noteIndex * noteHeight, noteWidth - 1, noteHeight - 1); } });
+
+                track.sequence.forEach(noteData => {
+                    const noteIndex = NOTE_PITCHES.indexOf(noteData.pitch);
+                    if (noteIndex > -1) {
+                        const noteWidth = stepWidth * (noteData.duration || 1);
+                        ctx.fillStyle = noteData.color;
+                        ctx.fillRect(noteData.step * stepWidth, noteIndex * noteHeight, noteWidth - 1, noteHeight - 1);
+                        
+                        if (track.selectedNotes && track.selectedNotes.includes(noteData)) {
+                            ctx.strokeStyle = 'white';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(noteData.step * stepWidth, noteIndex * noteHeight, noteWidth - 1, noteHeight - 1);
+                        }
+                    }
+                });
+
+                if (selectionState.isLassoing && selectionState.trackId === track.id) {
+                    ctx.fillStyle = 'rgba(103, 232, 249, 0.3)';
+                    ctx.strokeStyle = 'rgba(103, 232, 249, 0.8)';
+                    ctx.lineWidth = 1;
+                    const lassoX = Math.min(selectionState.startX, selectionState.currentX);
+                    const lassoY = Math.min(selectionState.startY, selectionState.currentY);
+                    const lassoWidth = Math.abs(selectionState.startX - selectionState.currentX);
+                    const lassoHeight = Math.abs(selectionState.startY - selectionState.currentY);
+                    ctx.fillRect(lassoX, lassoY, lassoWidth, lassoHeight);
+                    ctx.strokeRect(lassoX, lassoY, lassoWidth, lassoHeight);
+                }
+                
+                if (selectionState.isDraggingSelection && selectionState.trackId === track.id) {
+                    ctx.globalAlpha = 0.5;
+                    track.selectedNotes.forEach(note => {
+                        const newStep = note.originalStep + selectionState.deltaSteps;
+                        const newPitchIndex = note.originalPitchIndex + selectionState.deltaPitchIndex;
+                        if (newPitchIndex >= 0 && newPitchIndex < NOTE_PITCHES.length) {
+                             const noteWidth = stepWidth * (note.duration || 1);
+                             ctx.fillStyle = note.color;
+                             ctx.fillRect(newStep * stepWidth, newPitchIndex * noteHeight, noteWidth - 1, noteHeight - 1);
+                        }
+                    });
+                     ctx.globalAlpha = 1.0;
+                }
             }
+
             function getActiveTracks() {
                 const soloTrack = tracks.find(t => t.isSolo);
-                if (soloTrack) {
-                    return tracks.filter(t => t.isSolo);
-                }
+                if (soloTrack) { return tracks.filter(t => t.isSolo); }
                 return tracks.filter(t => !t.isMuted);
             }
             function schedulePlayback() {
@@ -270,34 +333,168 @@
                 scheduledParts.forEach(part => part.dispose());
                 scheduledParts = [];
                 getActiveTracks().forEach(track => {
-                    const events = track.sequence.map(noteData => ({ time: Tone.Time("16n") * noteData.step, duration: Tone.Time("16n") * (noteData.duration || 1), pitch: noteData.pitch, sound: noteData.sound }));
+                    const events = track.sequence.map(noteData => ({ time: Tone.Time("16n") * noteData.step, duration: Tone.Time("16n") * (noteData.duration || 1), pitch: noteData.pitch, sound: soundKits[noteData.kit].sounds[noteData.id] }));
                     const part = new Tone.Part((time, value) => {
+                        if (!value.sound) return;
                         value.sound.volume.value = track.volume;
-                        if (value.sound instanceof Tone.NoiseSynth) { value.sound.triggerAttackRelease(value.duration, time); } 
-                        else { value.sound.triggerAttackRelease(value.pitch, value.duration, time); }
+                        
+                        if (value.sound instanceof Tone.NoiseSynth) { 
+                            value.sound.triggerAttackRelease(value.duration, time); 
+                        } else { 
+                            value.sound.triggerAttackRelease(value.pitch, value.duration, time); 
+                        }
                     }, events).start(0);
                     part.loop = true; part.loopEnd = LOOP_DURATION;
                     scheduledParts.push(part);
                 });
             }
-            function addNote(track, step, pitch, duration) { const noteData = { step, pitch, duration, ...selectedInstrument }; track.sequence = track.sequence.filter(n => !(n.pitch === pitch && n.step < step + duration && step < n.step + n.duration)); track.sequence.push(noteData); drawPianoRoll(track); if (Tone.Transport.state === 'started') schedulePlayback(); }
+            function addNote(track, step, pitch, duration) { if (!selectedInstrument) { alert("Selecione um instrumento primeiro!"); return; } const noteData = { step, pitch, duration, color: selectedInstrument.color, kit: selectedInstrument.kit, id: selectedInstrument.id }; track.sequence = track.sequence.filter(n => !(n.pitch === pitch && n.step < step + duration && step < n.step + n.duration)); track.sequence.push(noteData); drawPianoRoll(track); if (Tone.Transport.state === 'started') schedulePlayback(); }
             function handleDelete(track, step, pitch) { const noteToDeleteIndex = track.sequence.findIndex(n => n.pitch === pitch && step >= n.step && step < (n.step + n.duration)); if (noteToDeleteIndex > -1) { track.sequence.splice(noteToDeleteIndex, 1); drawPianoRoll(track); if (Tone.Transport.state === 'started') schedulePlayback(); } }
+            
             function handleMouseDown(e, trackId) {
-                const targetTrack = tracks.find(t => t.id === trackId); if(!targetTrack) return;
-                const canvas = e.target; const rect = canvas.getBoundingClientRect();
-                const step = Math.floor((e.clientX - rect.left) / (canvas.width / STEPS_PER_TRACK));
-                const noteIndex = Math.floor((e.clientY - rect.top + canvas.parentElement.scrollTop) / PIANO_ROLL_NOTE_HEIGHT);
-                const pitch = NOTE_PITCHES[noteIndex];
+                const track = tracks.find(t => t.id === trackId);
+                if (!track) return;
+            
+                const canvas = e.target;
+                const rect = canvas.getBoundingClientRect();
+                const stepWidth = canvas.width / STEPS_PER_TRACK;
+                const noteHeight = PIANO_ROLL_NOTE_HEIGHT;
+            
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const step = Math.floor(x / stepWidth);
+                const pitchIndex = Math.floor(y / noteHeight);
+                const pitch = NOTE_PITCHES[pitchIndex];
+            
                 if (!pitch) return;
-                if (e.button === 2) { handleDelete(targetTrack, step, pitch); return; }
-                if (e.button !== 0 || !selectedInstrument) return;
-                isDragging = true;
-                dragInfo = { track: targetTrack, canvas, rect, stepWidth: canvas.width / STEPS_PER_TRACK, noteHeight: PIANO_ROLL_NOTE_HEIGHT, startStep: step, startPitch: pitch };
-                elements.notePreview.style.display = 'block'; updateNotePreview(e);
-                document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
+
+                if (e.button === 2) { 
+                    handleDelete(track, step, pitch); 
+                    return; 
+                }
+
+                if (track.selectionModeEnabled) {
+                    canvas.style.cursor = 'crosshair';
+                    const clickedOnNote = track.sequence.find(n => n.step <= step && (n.step + n.duration) > step && NOTE_PITCHES.indexOf(n.pitch) === pitchIndex);
+                    
+                    if (clickedOnNote && track.selectedNotes.includes(clickedOnNote)) {
+                        selectionState.isDraggingSelection = true;
+                        selectionState.trackId = trackId;
+                        selectionState.dragStartStep = step;
+                        selectionState.dragStartPitchIndex = pitchIndex;
+                        track.selectedNotes.forEach(n => {
+                            n.originalStep = n.step;
+                            n.originalPitchIndex = NOTE_PITCHES.indexOf(n.pitch);
+                        });
+                    } else {
+                        selectionState.isLassoing = true;
+                        selectionState.trackId = trackId;
+                        selectionState.startX = x;
+                        selectionState.startY = y;
+                        selectionState.currentX = x;
+                        selectionState.currentY = y;
+                        track.selectedNotes = []; 
+                    }
+                } else { 
+                    canvas.style.cursor = 'cell';
+                    if (selectedInstrument && selectedInstrument.sound) {
+                        if (selectedInstrument.sound instanceof Tone.NoiseSynth) {
+                            selectedInstrument.sound.triggerAttackRelease("16n");
+                        } else {
+                            selectedInstrument.sound.triggerAttackRelease(pitch, "16n");
+                        }
+                    }
+            
+                    if (e.button !== 0) return;
+                    
+                    isDragging = true;
+                    dragInfo = { track: track, canvas, rect, stepWidth, noteHeight, startStep: step, startPitch: pitch };
+                    elements.notePreview.style.display = 'block';
+                    updateNotePreview(e);
+                }
+            
+                document.addEventListener('mousemove', handleMouseMove);
+                document.addEventListener('mouseup', handleMouseUp);
             }
-            function handleMouseMove(e) { if (!isDragging) return; updateNotePreview(e); }
-            function handleMouseUp(e) { if (!isDragging) return; isDragging = false; elements.notePreview.style.display = 'none'; const endStep = Math.floor((e.clientX - dragInfo.rect.left) / dragInfo.stepWidth); const duration = Math.max(1, endStep - dragInfo.startStep + 1); addNote(dragInfo.track, dragInfo.startStep, dragInfo.startPitch, duration); document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); }
+
+            function handleMouseMove(e) {
+                if (selectionState.isLassoing) {
+                    const track = tracks.find(t => t.id === selectionState.trackId);
+                    if (!track) return;
+                    const canvas = document.querySelector(`canvas[data-track-id="${track.id}"]`);
+                    const rect = canvas.getBoundingClientRect();
+                    selectionState.currentX = e.clientX - rect.left;
+                    selectionState.currentY = e.clientY - rect.top;
+                    drawPianoRoll(track);
+                } else if (selectionState.isDraggingSelection) {
+                    const track = tracks.find(t => t.id === selectionState.trackId);
+                    if (!track) return;
+                     const canvas = document.querySelector(`canvas[data-track-id="${track.id}"]`);
+                    const rect = canvas.getBoundingClientRect();
+                    const stepWidth = canvas.width / STEPS_PER_TRACK;
+                
+                    const currentStep = Math.floor((e.clientX - rect.left) / stepWidth);
+                    const currentPitchIndex = Math.floor((e.clientY - rect.top) / PIANO_ROLL_NOTE_HEIGHT);
+
+                    selectionState.deltaSteps = currentStep - selectionState.dragStartStep;
+                    selectionState.deltaPitchIndex = currentPitchIndex - selectionState.dragStartPitchIndex;
+                    drawPianoRoll(track);
+
+                } else if (isDragging) {
+                    updateNotePreview(e);
+                }
+            }
+
+            function handleMouseUp(e) {
+                const trackId = selectionState.isLassoing || selectionState.isDraggingSelection ? selectionState.trackId : dragInfo.track?.id;
+                if (!trackId) { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); return; }
+                const track = tracks.find(t => t.id === trackId);
+                if (!track) return;
+                
+                if (selectionState.isLassoing) {
+                    selectionState.isLassoing = false;
+                    const canvas = document.querySelector(`canvas[data-track-id="${track.id}"]`);
+                    const stepWidth = canvas.width / STEPS_PER_TRACK;
+                    
+                    const x1 = Math.min(selectionState.startX, selectionState.currentX);
+                    const y1 = Math.min(selectionState.startY, selectionState.currentY);
+                    const x2 = Math.max(selectionState.startX, selectionState.currentX);
+                    const y2 = Math.max(selectionState.startY, selectionState.currentY);
+
+                    track.selectedNotes = track.sequence.filter(note => {
+                        const noteX = note.step * stepWidth;
+                        const noteY = NOTE_PITCHES.indexOf(note.pitch) * PIANO_ROLL_NOTE_HEIGHT;
+                        const noteEndX = (note.step + note.duration) * stepWidth;
+                        const noteEndY = noteY + PIANO_ROLL_NOTE_HEIGHT;
+                        return noteEndX > x1 && noteX < x2 && noteEndY > y1 && noteY < y2;
+                    });
+
+                } else if (selectionState.isDraggingSelection) {
+                    track.selectedNotes.forEach(note => {
+                        const newStep = note.originalStep + selectionState.deltaSteps;
+                        const newPitchIndex = note.originalPitchIndex + selectionState.deltaPitchIndex;
+                        if(newPitchIndex >= 0 && newPitchIndex < NOTE_PITCHES.length) {
+                            note.step = newStep;
+                            note.pitch = NOTE_PITCHES[newPitchIndex];
+                        }
+                    });
+                    if (Tone.Transport.state === 'started') schedulePlayback();
+                    selectionState.isDraggingSelection = false;
+
+                } else if (isDragging) {
+                    isDragging = false;
+                    elements.notePreview.style.display = 'none';
+                    const endStep = Math.floor((e.clientX - dragInfo.rect.left) / dragInfo.stepWidth);
+                    const duration = Math.max(1, endStep - dragInfo.startStep + 1);
+                    addNote(dragInfo.track, dragInfo.startStep, dragInfo.startPitch, duration);
+                }
+
+                drawPianoRoll(track);
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+                selectionState = {}; 
+            }
+
             function updateNotePreview(e) { 
                 const { canvas, rect, startStep, startPitch, stepWidth, noteHeight } = dragInfo;
                 const noteIndex = NOTE_PITCHES.indexOf(startPitch);
@@ -310,7 +507,7 @@
             }
             function toggleMute(trackId) { const track = tracks.find(t => t.id === trackId); if(!track) return; track.isMuted = !track.isMuted; if (track.isMuted) track.isSolo = false; updateTrackControls(); if (Tone.Transport.state === 'started') schedulePlayback(); }
             function toggleSolo(trackId) { const track = tracks.find(t => t.id === trackId); if(!track) return; const newSoloState = !track.isSolo; tracks.forEach(t => t.isSolo = false); track.isSolo = newSoloState; if (track.isSolo) track.isMuted = false; updateTrackControls(); if (Tone.Transport.state === 'started') schedulePlayback(); }
-            function updateTrackControls() { tracks.forEach(track => { const trackEl = document.querySelector(`.track-container[data-track-id="${track.id}"]`); if(trackEl) { trackEl.querySelector('.mute-btn').classList.toggle('active', track.isMuted); trackEl.querySelector('.solo-btn').classList.toggle('active', track.isSolo); } }); }
+            function updateTrackControls() { tracks.forEach(track => { const trackEl = document.querySelector(`.track-container[data-track-id="${track.id}"]`); if(trackEl) { trackEl.querySelector('.mute-btn').classList.toggle('active', track.isMuted); trackEl.querySelector('.solo-btn').classList.toggle('active', track.isSolo); trackEl.querySelector('.selection-mode-btn').classList.toggle('active', !!track.selectionModeEnabled); } }); }
             function deleteTrack(trackId) { const trackIndex = tracks.findIndex(t => t.id === trackId); if(trackIndex > -1) { tracks.splice(trackIndex, 1); document.querySelector(`.track-container[data-track-id="${trackId}"]`).remove(); if (Tone.Transport.state === 'started') schedulePlayback(); } }
             
             function addTrack(data = {}) {
@@ -322,43 +519,47 @@
                     isMuted: data.isMuted || false, 
                     isSolo: data.isSolo || false,
                     volume: data.volume || 0,
-                    sequence: data.sequence ? data.sequence.map(noteData => {
-                        const soundObject = soundKits[noteData.kit].sounds[noteData.id];
-                        if (!soundObject) { console.warn(`Som não encontrado para kit: ${noteData.kit}, id: ${noteData.id}`); }
-                        return { ...noteData, sound: soundObject };
-                    }) : []
+                    sequence: data.sequence ? data.sequence.map(noteData => ({...noteData})) : [],
+                    selectionModeEnabled: false,
+                    selectedNotes: []
                 };
-
                 if (!tracks.some(t => t.id === newTrack.id)) { tracks.push(newTrack); } 
                 else { const existingTrackIndex = tracks.findIndex(t => t.id === newTrack.id); if (existingTrackIndex > -1) { tracks[existingTrackIndex] = newTrack; } }
-
                 const trackEl = document.createElement('div');
                 trackEl.className = 'track-container bg-gray-900/50 p-3 rounded-lg space-y-2'; 
                 trackEl.dataset.trackId = newTrack.id;
                 trackEl.innerHTML = `
-                        <div class="flex justify-between items-center mb-2">
-                            <span class="track-name font-bold text-gray-300 cursor-pointer" title="Duplo clique para renomear">${newTrack.name}</span>
-                            <div class="flex items-center gap-4">
-                                <div class="flex items-center gap-1"><label class="text-xs text-gray-400">Vol</label><input type="range" min="-40" max="6" value="${newTrack.volume}" class="w-20 h-1 volume-slider"></div>
-                                <div class="flex gap-2">
-                                    <button class="track-btn mute-btn w-8 h-8 rounded-md bg-gray-600 text-xs font-bold" title="Mudo">M</button>
-                                    <button class="track-btn solo-btn w-8 h-8 rounded-md bg-gray-600 text-xs font-bold" title="Solo">S</button>
-                                    <button class="track-action-btn clear-track-btn w-8 h-8 rounded-md bg-gray-600 text-lg" title="Limpar Pista">🧹</button>
-                                    <button class="track-action-btn delete-track-btn w-8 h-8 rounded-md bg-red-800 text-lg" title="Apagar Pista">🗑️</button>
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="track-name font-bold text-gray-300 cursor-pointer" title="Duplo clique para renomear">${newTrack.name}</span>
+                                <div class="flex items-center gap-4">
+                                    <div class="flex items-center gap-1"><label class="text-xs text-gray-400">Vol</label><input type="range" min="-40" max="6" value="${newTrack.volume}" class="w-20 h-1 volume-slider"></div>
+                                    <div class="flex gap-2">
+                                        <button class="track-btn selection-mode-btn w-8 h-8 rounded-md bg-gray-600 text-lg" title="Alternar Modo Seleção">🖱️</button>
+                                        <button class="track-btn mute-btn w-8 h-8 rounded-md bg-gray-600 text-xs font-bold" title="Mudo">M</button>
+                                        <button class="track-btn solo-btn w-8 h-8 rounded-md bg-gray-600 text-xs font-bold" title="Solo">S</button>
+                                        <button class="track-action-btn clear-track-btn w-8 h-8 rounded-md bg-gray-600 text-lg" title="Limpar Pista">🧹</button>
+                                        <button class="track-action-btn delete-track-btn w-8 h-8 rounded-md bg-red-800 text-lg" title="Apagar Pista">🗑️</button>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="relative">
-                            <div class="time-ruler-container h-6 bg-gray-700 text-xs text-gray-400 rounded-t-md"></div>
-                            <canvas class="piano-roll-canvas" data-track-id="${newTrack.id}"></canvas>
-                            <div class="playhead"></div>
-                        </div>`;
+                            <div class="relative">
+                                <div class="time-ruler-container h-6 bg-gray-700 text-xs text-gray-400 rounded-t-md"></div>
+                                <canvas class="piano-roll-canvas" data-track-id="${newTrack.id}"></canvas>
+                                <div class="playhead"></div>
+                            </div>`;
                 elements.tracksContainer.appendChild(trackEl);
                 trackEl.querySelector('.volume-slider').addEventListener('input', (e) => { newTrack.volume = parseFloat(e.target.value); if (Tone.Transport.state === 'started') schedulePlayback(); });
                 trackEl.querySelector('.mute-btn').addEventListener('click', () => toggleMute(newTrack.id));
                 trackEl.querySelector('.solo-btn').addEventListener('click', () => toggleSolo(newTrack.id));
                 trackEl.querySelector('.clear-track-btn').addEventListener('click', () => clearTrack(newTrack.id, true));
                 trackEl.querySelector('.delete-track-btn').addEventListener('click', () => deleteTrack(newTrack.id));
+                trackEl.querySelector('.selection-mode-btn').addEventListener('click', (e) => {
+                    newTrack.selectionModeEnabled = !newTrack.selectionModeEnabled;
+                    e.currentTarget.classList.toggle('active', newTrack.selectionModeEnabled);
+                    const canvas = trackEl.querySelector('.piano-roll-canvas');
+                    canvas.style.cursor = newTrack.selectionModeEnabled ? 'crosshair' : 'cell';
+                });
+
                 const trackNameEl = trackEl.querySelector('.track-name');
                 trackNameEl.addEventListener('dblclick', () => { trackNameEl.contentEditable = true; trackNameEl.focus(); });
                 trackNameEl.addEventListener('blur', () => { trackNameEl.contentEditable = false; newTrack.name = trackNameEl.textContent; });
@@ -388,6 +589,7 @@
                 const track = tracks.find(t => t.id === trackId); 
                 if (track) { 
                     track.sequence = []; 
+                    track.selectedNotes = [];
                     drawPianoRoll(track); 
                     if (Tone.Transport.state === 'started' && !isLoaded) {
                         schedulePlayback(); 
@@ -402,10 +604,7 @@
                     tracks: tracks.map(track => ({
                         id: track.id, name: track.name, volume: track.volume, 
                         isMuted: track.isMuted, isSolo: track.isSolo, type: track.type,
-                        sequence: track.sequence.map(note => ({
-                            step: note.step, pitch: note.pitch, duration: note.duration,
-                            color: note.color, kit: note.kit, id: note.id
-                        }))
+                        sequence: track.sequence
                     }))
                 };
                 const jsonString = JSON.stringify(projectData, null, 2);
@@ -465,6 +664,51 @@
             
             function openHelpModal() { elements.helpModalOverlay.style.display = 'flex'; }
             function closeHelpModal() { elements.helpModalOverlay.style.display = 'none'; }
+            
+            async function webmToWav(webmBlob) {
+                elements.statusDisplay.textContent = 'Convertendo para WAV... Por favor, aguarde.';
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 44100
+                    });
+                    const arrayBuffer = await webmBlob.arrayBuffer();
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    const bufferToWav = (buffer) => {
+                        const numOfChan = buffer.numberOfChannels;
+                        const length = buffer.length * numOfChan * 2 + 44;
+                        const bufferWav = new ArrayBuffer(length);
+                        const view = new DataView(bufferWav);
+                        const channels = [];
+                        let i, sample;
+                        let offset = 0;
+                        let pos = 0;
+                        setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); setUint32(0x20746d66);
+                        setUint32(16); setUint16(1); setUint16(numOfChan); setUint32(buffer.sampleRate);
+                        setUint32(buffer.sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16);
+                        setUint32(0x61746164); setUint32(length - pos - 4);
+                        function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+                        function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+                        for (i = 0; i < numOfChan; i++) { channels.push(buffer.getChannelData(i)); }
+                        while (pos < length) {
+                            for (i = 0; i < numOfChan; i++) {
+                                sample = Math.max(-1, Math.min(1, channels[i][offset]));
+                                sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
+                                view.setInt16(pos, sample, true); pos += 2;
+                            }
+                            offset++;
+                        }
+                        return new Blob([view], { type: 'audio/wav' });
+                    };
+                    const wavBlob = bufferToWav(audioBuffer);
+                    elements.statusDisplay.textContent = 'Conversão concluída. Pronto para baixar!';
+                    return wavBlob;
+                } catch (error) {
+                    console.error("Erro na conversão para WAV:", error);
+                    elements.statusDisplay.textContent = 'Erro ao converter o áudio.';
+                    alert('Ocorreu um erro ao converter o áudio. O arquivo gravado pode estar vazio ou corrompido.');
+                    return null;
+                }
+            }
 
             elements.helpButton.addEventListener('click', openHelpModal);
             elements.closeHelpModalBtn.addEventListener('click', closeHelpModal);
@@ -479,7 +723,8 @@
             elements.stopButton.addEventListener('click', () => { if (isAudioReady) { Tone.Transport.stop(); } });
 
             elements.bpmSlider.addEventListener('input', e => { const bpm = e.target.value; if(isAudioReady) Tone.Transport.bpm.value = bpm; elements.bpmDisplay.textContent = bpm; });
-            elements.kitSelect.addEventListener('change', (e) => { currentKit = e.target.value; createPads(); });
+            elements.kitSelect.addEventListener('change', () => { currentKit = elements.kitSelect.value; createPads(); });
+
             elements.addTrackButton.addEventListener('click', () => addTrack());
             elements.metronomeButton.addEventListener('click', () => {
                 isMetronomeOn = !isMetronomeOn;
@@ -511,17 +756,35 @@
             });
             
             elements.downloadButton.addEventListener('click', async () => {
-                if (!recordedBlob) { elements.statusDisplay.textContent = "Grave algo primeiro."; alert("Grave algo primeiro."); return; }
+                if (!recordedBlob || recordedBlob.size === 0) {
+                    elements.statusDisplay.textContent = "Nenhuma gravação válida encontrada. Grave algo primeiro.";
+                    alert("Nenhuma gravação válida encontrada. Grave algo primeiro.");
+                    return;
+                }
+                elements.downloadButton.disabled = true;
+                elements.downloadButton.textContent = 'Processando...';
                 const wavBlob = await webmToWav(recordedBlob);
                 if (wavBlob) {
-                    await promptAndSaveFile(wavBlob, 'minha-performance.wav', 'audio/wav');
+                    const url = URL.createObjectURL(wavBlob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = 'minha-performance.wav';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    elements.statusDisplay.textContent = 'Download iniciado!';
                 }
+                elements.downloadButton.disabled = false;
+                elements.downloadButton.textContent = 'Baixar WAV';
             });
 
             elements.saveProjectBtn.addEventListener('click', saveProject);
             elements.loadProjectBtn.addEventListener('click', () => elements.loadProjectInput.click());
             elements.loadProjectInput.addEventListener('change', loadProject);
-
+            
+            initializeAudio();
             createPads();
             addTrack();
         });
